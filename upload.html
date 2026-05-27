@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>工序计划上传</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body class="upload-page">
+    <main class="upload-box">
+      <div class="upload-title">核容分厂工艺路线上传</div>
+
+      <div class="form-item">
+        <label>令号（orderCode）<span style="color: red">*</span></label>
+        <input class="field" id="orderCode" type="text" value="1150053" autocomplete="off" />
+      </div>
+
+      <div class="form-item">
+        <label>项目名称（itemName）<span style="color: red">*</span></label>
+        <input class="field" id="itemName" type="text" value="大连西太二期1x150t/h角管炉" autocomplete="off" />
+      </div>
+
+      <div class="form-item">
+        <label>上传工艺路线表/压缩包<span style="color: red">*</span></label>
+        <div class="file-upload" id="fileUpload">
+          <span>点击选择工艺路线文件</span>
+          <input id="routeFile" type="file" accept=".xls,.xlsx,.zip,.rar,.7z" />
+          <div class="file-tips">支持 xls/xlsx/zip/rar/7z</div>
+          <div class="file-name" id="fileName"></div>
+        </div>
+      </div>
+
+      <button class="submit-btn" id="submitBtn">开始上传</button>
+      <section class="conflict-panel" id="conflictPanel" hidden></section>
+      <div class="msg" id="msg"></div>
+    </main>
+
+    <script src="./assets/state.js"></script>
+    <script>
+      const fileUpload = document.getElementById("fileUpload");
+      const fileInput = document.getElementById("routeFile");
+      const fileName = document.getElementById("fileName");
+      const submitBtn = document.getElementById("submitBtn");
+      const msg = document.getElementById("msg");
+      const conflictPanel = document.getElementById("conflictPanel");
+      let pendingUpload = null;
+
+      fileUpload.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        fileName.textContent = fileInput.files[0] ? `已选择：${fileInput.files[0].name}` : "";
+        hideConflict();
+      });
+
+      submitBtn.addEventListener("click", () => {
+        const orderCode = document.getElementById("orderCode").value.trim();
+        const itemName = document.getElementById("itemName").value.trim();
+        const file = fileInput.files[0];
+        if (!orderCode) return showMsg("请输入令号", "error");
+        if (!itemName) return showMsg("请输入项目名称", "error");
+        if (!file) return showMsg("请选择上传文件", "error");
+
+        const conflict = DrumDemo.getUploadConflict(orderCode);
+        if (conflict) {
+          pendingUpload = { orderCode, itemName, fileName: file.name };
+          return showConflict(conflict);
+        }
+
+        runUpload({ orderCode, itemName, fileName: file.name, mode: "replace" });
+      });
+
+      conflictPanel.addEventListener("click", (event) => {
+        const action = event.target.dataset.action;
+        if (!action) return;
+        if (action === "cancel") {
+          hideConflict();
+          showMsg("已取消上传，现有工艺路线不变。", "error");
+          return;
+        }
+        if (!pendingUpload) return;
+        runUpload({ ...pendingUpload, mode: action === "safe" ? "safeMerge" : "replace" });
+      });
+
+      function runUpload(payload) {
+        hideConflict();
+        submitBtn.disabled = true;
+        submitBtn.textContent = "上传中...";
+        setTimeout(() => {
+          DrumDemo.uploadRoute(payload);
+          submitBtn.disabled = false;
+          submitBtn.textContent = "开始上传";
+          pendingUpload = null;
+          const suffix = payload.mode === "safeMerge" ? "已保留原有打卡进度和二维码编码。" : "已按新文件重建锅筒主线数据。";
+          showMsg(`上传成功：${payload.orderCode} 已更新，${suffix}`, "success");
+        }, 350);
+      }
+
+      function showConflict(conflict) {
+        msg.className = "msg";
+        conflictPanel.hidden = false;
+        conflictPanel.innerHTML = `
+          <h2>检测到该令号已上传</h2>
+          <p>再次上传可能影响后续系统数据：厂长看板进度、已打印二维码、扫码打卡记录和计划调整。</p>
+          <div class="conflict-grid">
+            <span>当前文件</span><strong>${conflict.drum.source_file}</strong>
+            <span>当前工序</span><strong>${conflict.currentTask.process_name}</strong>
+            <span>完成进度</span><strong>${conflict.completedCount}/${conflict.drum.tasks.length} 道，${conflict.completionRate}%</strong>
+            <span>扫码记录</span><strong>${conflict.scanCount} 条</strong>
+            <span>已打印标签</span><strong>${conflict.printedCount} 张</strong>
+          </div>
+          <div class="conflict-actions">
+            <button class="btn" type="button" data-action="cancel">取消上传</button>
+            <button class="btn primary" type="button" data-action="safe">安全更新（推荐）</button>
+            <button class="btn red" type="button" data-action="replace">整单重建</button>
+          </div>
+          <p class="conflict-tip">安全更新：保留已完成工序、扫码记录和二维码编码，只更新未完成工序计划。整单重建：按新文件重置该令号进度，适合尚未投产或测试数据。</p>
+        `;
+      }
+
+      function hideConflict() {
+        conflictPanel.hidden = true;
+        conflictPanel.innerHTML = "";
+      }
+
+      function showMsg(text, type) {
+        msg.textContent = text;
+        msg.className = `msg show ${type}`;
+      }
+    </script>
+  </body>
+</html>

@@ -1,130 +1,775 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>工序计划上传</title>
-    <link rel="stylesheet" href="./assets/styles.css" />
-  </head>
-  <body class="upload-page">
-    <main class="upload-box">
-      <div class="upload-title">核容分厂工艺路线上传</div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>核容分厂汽包锅筒工序扫码打卡 SOP</title>
+  <style>
+    :root {
+      --text: #24292f;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --bg: #ffffff;
+      --soft: #f7f7f5;
+      --blue: #2f6fed;
+      --green: #238b5b;
+      --red: #d7193f;
+      --sidebar-w: 180px;
+    }
 
-      <div class="form-item">
-        <label>令号（orderCode）<span style="color: red">*</span></label>
-        <input class="field" id="orderCode" type="text" value="1150053" autocomplete="off" />
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.6;
+    }
+
+    /* ---- sidebar ---- */
+    .sidebar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      padding: 32px 0 32px 24px;
+      border-right: 1px solid var(--line);
+      background: var(--bg);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sidebar-tag {
+      display: inline-flex;
+      margin-bottom: 20px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 12px;
+      width: fit-content;
+    }
+
+    .sidebar a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all .15s;
+    }
+
+    .sidebar a .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--line);
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+
+    .sidebar a.active {
+      color: var(--text);
+      background: var(--soft);
+    }
+
+    .sidebar a.active .dot {
+      background: var(--blue);
+    }
+
+    /* ---- main ---- */
+    .page {
+      margin-left: var(--sidebar-w);
+      max-width: 960px;
+      padding: 36px 40px 80px;
+    }
+
+    h1 {
+      margin: 0 0 40px;
+      font-size: 36px;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+
+    section {
+      padding-top: 12px;
+      margin-bottom: 56px;
+    }
+
+    h2 {
+      margin: 0 0 28px;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+    }
+
+    /* ---- timeline steps ---- */
+    .flow {
+      position: relative;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 0 20px;
+      position: relative;
+    }
+
+    /* vertical connector line */
+    .step::before {
+      content: "";
+      position: absolute;
+      left: 23px;
+      top: 44px;
+      bottom: -20px;
+      width: 2px;
+      background: var(--line);
+    }
+
+    .step:last-child::before {
+      display: none;
+    }
+
+    .step-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 2px;
+    }
+
+    .step-no {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--text);
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .step-body {
+      padding-bottom: 36px;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .step-header h3 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .step-header .role {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .step-header .role b {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* screenshot */
+    .step-visual {
+      margin-bottom: 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .step-visual img {
+      flex: 1;
+      min-width: 0;
+      max-height: 420px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--soft);
+    }
+
+    .step-visual .view-link {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--blue);
+      text-decoration: none;
+      background: #fff;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+
+    .step-visual .view-link:hover {
+      background: var(--soft);
+    }
+
+    .step-visual .photo-row-wrap {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .step-visual small {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* standard actions */
+    .step-actions {
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fffbeb;
+      border-color: #f0d88a;
+    }
+
+    .step-actions .label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .step-actions ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .step-actions li {
+      margin-bottom: 3px;
+    }
+
+    /* ---- rules ---- */
+    .checklist {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .note {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .note h3 { margin: 0 0 8px; font-size: 17px; }
+
+    .note ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .note.good { border-color: rgba(35,139,91,.28); background: #f3fbf7; }
+    .note.warn { border-color: rgba(215,25,63,.25); background: #fff7f7; }
+
+    /* ---- table ---- */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+    th, td {
+      padding: 12px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { background: var(--soft); font-weight: 700; }
+    td:first-child { width: 150px; font-weight: 700; }
+
+    /* ---- gallery ---- */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+    }
+
+    figure {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    figure img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+      display: block;
+    }
+
+    figcaption {
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    /* ---- flowchart viewer ---- */
+    .flowchart-wrap {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      background: var(--soft);
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .flowchart-wrap img {
+      display: block;
+      height: calc(100vh - 180px);
+      width: auto;
+    }
+
+    .fullscreen-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 6px 14px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(0,0,0,.5);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      z-index: 1;
+      transition: background .15s;
+    }
+
+    .fullscreen-btn:hover { background: rgba(0,0,0,.7); }
+
+    /* ---- video ---- */
+    .video-wrap {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .video-wrap video {
+      display: block;
+      width: 100%;
+      max-height: 80vh;
+      object-fit: contain;
+    }
+
+    /* overlay */
+    .flowchart-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0,0,0,.85);
+      display: none;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .flowchart-overlay.open { display: block; }
+
+    .flowchart-overlay img {
+      display: block;
+      height: 100vh;
+      width: auto;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .flowchart-overlay .close-btn {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      z-index: 201;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+    }
+
+    .flowchart-overlay .close-btn:hover {
+      background: rgba(255,255,255,.3);
+    }
+
+    .flowchart-overlay .drag-hint {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 16px;
+      border-radius: 6px;
+      background: rgba(255,255,255,.15);
+      color: #fff;
+      font-size: 13px;
+      pointer-events: none;
+      transition: opacity .3s;
+    }
+
+    /* ---- responsive ---- */
+    @media (max-width: 1100px) {
+      .sidebar { display: none; }
+      .page { margin-left: 0; }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 24px 16px 48px; }
+      h1 { font-size: 28px; }
+      .checklist, .gallery { grid-template-columns: 1fr; }
+      .step-visual .photo-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="sidebar">
+    <a href="#flow" class="active"><span class="dot"></span>SOP</a>
+    <a href="#rules"><span class="dot"></span>现场规则</a>
+    <a href="#exceptions"><span class="dot"></span>异常处理</a>
+    <a href="#photos"><span class="dot"></span>现场图示</a>
+    <a href="#principle"><span class="dot"></span>锅炉汽包应用原理</a>
+    <a href="#process-detail"><span class="dot"></span>汽包工序详解</a>
+  </nav>
+
+  <main class="page">
+    <h1>核容分厂汽包锅筒工序扫码打卡 SOP</h1>
+
+    <section id="flow">
+      <div class="flow">
+
+        <article class="step">
+          <div class="step-col"><span class="step-no">1</span></div>
+          <div class="step-body">
+            <div class="step-header">
+              <h3>上传工艺路线</h3>
+              <span class="role">操作人：<b>分厂技术员</b></span>
+              <span class="role">操作方式：<b>在电脑端操作</b></span>
+            </div>
+            <div class="step-visual">
+              <img src="./assets/sop-screenshot-upload.png" alt="上传工艺路线页面">
+              <a class="view-link" href="./upload.html" target="_blank">点击看原型 ›</a>
+            </div>
+            <div class="step-actions">
+              <span class="label">标准动作</span>
+              <ul>
+                <li>填写生产令号、项目名称。</li>
+                <li>上传工艺路线表或压缩包。</li>
+                <li>如果令号已存在，先确认是"保留已打卡记录更新"还是"重建数据"。</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="step-col"><span class="step-no">2</span></div>
+          <div class="step-body">
+            <div class="step-header">
+              <h3>确认工序计划</h3>
+              <span class="role">操作人：<b>分厂厂长</b></span>
+              <span class="role">操作方式：<b>查看令号和工序计划</b></span>
+            </div>
+            <div class="step-visual">
+              <img src="./assets/sop-screenshot-dashboard.png" alt="厂长看板页面">
+              <a class="view-link" href="./dashboard.html" target="_blank">点击看原型 ›</a>
+            </div>
+            <div class="step-actions">
+              <span class="label">标准动作</span>
+              <ul>
+                <li>确认上传后的令号出现在核容锅筒工序打卡列表。</li>
+                <li>点击令号进入进度页面。</li>
+                <li>必要时调整每道工序的计划开始和计划完成日期。</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="step-col"><span class="step-no">3</span></div>
+          <div class="step-body">
+            <div class="step-header">
+              <h3>打印并张贴二维码</h3>
+              <span class="role">操作人：<b>分厂技术员</b></span>
+              <span class="role">操作方式：<b>打印标签，贴到磁吸牌并挂到备料钢板</b></span>
+            </div>
+            <div class="step-visual">
+              <div class="photo-row-wrap">
+                <div class="photo-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div>
+                    <img src="./assets/sop-printer.jpg" alt="热敏打印机">
+                    <small>设备：热敏打印机</small>
+                  </div>
+                  <div>
+                    <img src="./assets/sop-magnetic-tag.jpg" alt="磁吸标签牌">
+                    <small>磁吸标签牌</small>
+                  </div>
+                </div>
+              </div>
+              <a class="view-link" href="./printer.html" target="_blank">点击看原型 ›</a>
+            </div>
+            <div class="step-actions">
+              <span class="label">标准动作</span>
+              <ul>
+                <li>在打印机应用里搜索或选择生产令号。</li>
+                <li>核对项目、图号、锅筒对象。</li>
+                <li>点击打印，生成同一业务二维码标签。</li>
+                <li>二维码贴在白色磁吸标签牌上。</li>
+                <li>标签挂到备料钢板或随件工装附近。</li>
+                <li>确认现场人员能快速找到并扫码。</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="step-col"><span class="step-no">4</span></div>
+          <div class="step-body">
+            <div class="step-header">
+              <h3>扫码完成打卡</h3>
+              <span class="role">操作人：<b>各工序操作员</b></span>
+              <span class="role">操作方式：<b>每道工序完成后扫码</b></span>
+            </div>
+            <div class="step-visual">
+              <img src="./assets/sop-screenshot-checkin.png" alt="扫码完成打卡页面">
+              <a class="view-link" href="./checkin.html" target="_blank">点击看原型 ›</a>
+            </div>
+            <div class="step-actions">
+              <span class="label">标准动作</span>
+              <ul>
+                <li>用手机扫描随工序流转的二维码。</li>
+                <li>页面自动定位当前待完成工序。</li>
+                <li>点击"完成该工序"，等待完成提示，不连续误点下一道。</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="step-col"><span class="step-no">5</span></div>
+          <div class="step-body">
+            <div class="step-header">
+              <h3>查看进度同步</h3>
+              <span class="role">操作人：<b>分厂厂长</b></span>
+              <span class="role">操作方式：<b>在看板查看进度结果</b></span>
+            </div>
+            <div class="step-visual">
+              <img src="./assets/sop-screenshot-dashboard.png" alt="进度同步到厂长看板">
+              <a class="view-link" href="./dashboard.html" target="_blank">点击看原型 ›</a>
+            </div>
+            <div class="step-actions">
+              <span class="label">完成标准</span>
+              <ul>
+                <li>刚完成工序显示为已完成。</li>
+                <li>下一道工序变为当前待完成。</li>
+                <li>看板能看到计划完成时间和工序状态。</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
       </div>
+    </section>
 
-      <div class="form-item">
-        <label>项目名称（itemName）<span style="color: red">*</span></label>
-        <input class="field" id="itemName" type="text" value="大连西太二期1x150t/h角管炉" autocomplete="off" />
-      </div>
-
-      <div class="form-item">
-        <label>上传工艺路线表/压缩包<span style="color: red">*</span></label>
-        <div class="file-upload" id="fileUpload">
-          <span>点击选择工艺路线文件</span>
-          <input id="routeFile" type="file" accept=".xls,.xlsx,.zip,.rar,.7z" />
-          <div class="file-tips">支持 xls/xlsx/zip/rar/7z</div>
-          <div class="file-name" id="fileName"></div>
+    <section id="rules">
+      <h2>现场规则</h2>
+      <div class="checklist">
+        <div class="note good">
+          <h3>必须做到</h3>
+          <ul>
+            <li>一件锅筒对应一个二维码业务标签。</li>
+            <li>标签从备料钢板开始，随工序流转。</li>
+            <li>谁完成当前工序，谁扫码确认完成。</li>
+            <li>完成时间以扫码时间为准。</li>
+          </ul>
+        </div>
+        <div class="note warn">
+          <h3>禁止做法</h3>
+          <ul>
+            <li>不能提前打卡。</li>
+            <li>不能代替下一道工序打卡。</li>
+            <li>不能把标签长期放在办公室、工具箱或人员手里。</li>
+            <li>不能在已有打卡记录的令号上随意覆盖数据。</li>
+          </ul>
         </div>
       </div>
+    </section>
 
-      <button class="submit-btn" id="submitBtn">开始上传</button>
-      <section class="conflict-panel" id="conflictPanel" hidden></section>
-      <div class="msg" id="msg"></div>
-    </main>
+    <section id="exceptions">
+      <h2>异常处理</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>异常</th>
+            <th>处理方式</th>
+            <th>责任人</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>二维码污染或扫不出</td>
+            <td>先擦拭；仍无法扫码则按令号重新打印并替换旧标签。</td>
+            <td>分厂技术员</td>
+          </tr>
+          <tr>
+            <td>标签丢失</td>
+            <td>重新打印；旧标签如找回必须作废，避免现场存在两个有效标签。</td>
+            <td>分厂技术员</td>
+          </tr>
+          <tr>
+            <td>扫码页面工序不对</td>
+            <td>暂停打卡，确认上一工序是否漏打、工艺路线是否上传错误。</td>
+            <td>分厂技术员</td>
+          </tr>
+          <tr>
+            <td>令号重复上传</td>
+            <td>优先保留已打卡记录并更新计划；只有确认废弃旧数据时才重建。</td>
+            <td>分厂技术员</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
 
-    <script src="./assets/state.js"></script>
-    <script>
-      const fileUpload = document.getElementById("fileUpload");
-      const fileInput = document.getElementById("routeFile");
-      const fileName = document.getElementById("fileName");
-      const submitBtn = document.getElementById("submitBtn");
-      const msg = document.getElementById("msg");
-      const conflictPanel = document.getElementById("conflictPanel");
-      let pendingUpload = null;
+    <section id="photos">
+      <h2>现场图示</h2>
+      <div class="gallery">
+        <figure>
+          <img src="./assets/sop-printer.jpg" alt="热敏打印机">
+          <figcaption>热敏打印机：现场打印二维码标签。</figcaption>
+        </figure>
+        <figure>
+          <img src="./assets/sop-magnetic-tag.jpg" alt="磁吸标签牌">
+          <figcaption>磁吸标签牌：二维码贴到标签牌上。</figcaption>
+        </figure>
+        <figure>
+          <img src="./assets/sop-crane-plate.jpg" alt="钢板吊运">
+          <figcaption>备料和吊运：标签不影响吊装，随实物流转。</figcaption>
+        </figure>
+        <figure>
+          <img src="./assets/sop-plate-mark.jpg" alt="备料钢板">
+          <figcaption>初始备料钢板：标签从这里开始跟随工序。</figcaption>
+        </figure>
+        <figure>
+          <img src="./assets/sop-drum-workshop.jpg" alt="锅筒现场">
+          <figcaption>锅筒现场：扫码数据减少人工追问和事后补录。</figcaption>
+        </figure>
+      </div>
+    </section>
 
-      fileUpload.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", () => {
-        fileName.textContent = fileInput.files[0] ? `已选择：${fileInput.files[0].name}` : "";
-        hideConflict();
-      });
+    <section id="principle">
+      <h2>锅炉汽包应用原理</h2>
+      <div class="video-wrap">
+        <video id="principleVideo" controls preload="metadata" playsinline>
+          <source src="./assets/boiler-principle.mp4" type="video/mp4">
+          您的浏览器不支持视频播放。
+        </video>
+      </div>
+    </section>
 
-      submitBtn.addEventListener("click", () => {
-        const orderCode = document.getElementById("orderCode").value.trim();
-        const itemName = document.getElementById("itemName").value.trim();
-        const file = fileInput.files[0];
-        if (!orderCode) return showMsg("请输入令号", "error");
-        if (!itemName) return showMsg("请输入项目名称", "error");
-        if (!file) return showMsg("请选择上传文件", "error");
+    <section id="process-detail">
+      <h2>汽包工序详解</h2>
+      <p style="margin:0 0 16px;color:var(--muted);font-size:14px;">左右滑动浏览完整工序。</p>
+      <div style="position:relative;">
+        <div class="flowchart-wrap" id="flowchartWrap">
+          <img src="./assets/flowchart-full.png" alt="核容分厂汽包工序完整流程图" id="flowchartImg" draggable="false">
+        </div>
+        <button class="fullscreen-btn" id="fullscreenBtn">全屏查看</button>
+      </div>
+    </section>
+  </main>
 
-        const conflict = DrumDemo.getUploadConflict(orderCode);
-        if (conflict) {
-          pendingUpload = { orderCode, itemName, fileName: file.name };
-          return showConflict(conflict);
+  <script>
+    const sections = document.querySelectorAll('section[id]');
+    const links = document.querySelectorAll('.sidebar a');
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          const link = document.querySelector(`.sidebar a[href="#${entry.target.id}"]`);
+          if (link) link.classList.add('active');
         }
-
-        runUpload({ orderCode, itemName, fileName: file.name, mode: "replace" });
       });
+    }, { rootMargin: '-20% 0px -60% 0px' });
 
-      conflictPanel.addEventListener("click", (event) => {
-        const action = event.target.dataset.action;
-        if (!action) return;
-        if (action === "cancel") {
-          hideConflict();
-          showMsg("已取消上传，现有工艺路线不变。", "error");
-          return;
+    sections.forEach(s => observer.observe(s));
+
+    // ---- flowchart fullscreen ----
+    const wrap = document.getElementById('flowchartWrap');
+    const fsBtn = document.getElementById('fullscreenBtn');
+    const img = document.getElementById('flowchartImg');
+    const overlay = document.createElement('div');
+    overlay.className = 'flowchart-overlay';
+    overlay.innerHTML = `
+      <button class="close-btn" aria-label="关闭">&times;</button>
+      <img src="${img.src}" alt="流程图" draggable="false">
+    `;
+    document.body.appendChild(overlay);
+
+    const closeBtn = overlay.querySelector('.close-btn');
+
+    fsBtn.addEventListener('click', () => {
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+      overlay.scrollLeft = 0;
+    });
+
+    function closeOverlay() {
+      overlay.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeOverlay(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeOverlay(); });
+
+    // ---- video autoplay on scroll ----
+    const video = document.getElementById('principleVideo');
+    let userPaused = false;
+    video.addEventListener('pause', () => {
+      if (!video.ended && !video.autopause) userPaused = true;
+    });
+    video.addEventListener('play', () => { userPaused = false; });
+    const videoObs = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          if (!userPaused) video.play().catch(() => {});
+        } else {
+          video.autopause = true;
+          video.pause();
+          video.autopause = false;
         }
-        if (!pendingUpload) return;
-        runUpload({ ...pendingUpload, mode: action === "safe" ? "safeMerge" : "replace" });
       });
-
-      function runUpload(payload) {
-        hideConflict();
-        submitBtn.disabled = true;
-        submitBtn.textContent = "上传中...";
-        setTimeout(() => {
-          DrumDemo.uploadRoute(payload);
-          submitBtn.disabled = false;
-          submitBtn.textContent = "开始上传";
-          pendingUpload = null;
-          const suffix = payload.mode === "safeMerge" ? "已保留原有打卡进度和二维码编码。" : "已按新文件重建锅筒主线数据。";
-          showMsg(`上传成功：${payload.orderCode} 已更新，${suffix}`, "success");
-        }, 350);
-      }
-
-      function showConflict(conflict) {
-        msg.className = "msg";
-        conflictPanel.hidden = false;
-        conflictPanel.innerHTML = `
-          <h2>检测到该令号已上传</h2>
-          <p>再次上传可能影响后续系统数据：厂长看板进度、已打印二维码、扫码打卡记录和计划调整。</p>
-          <div class="conflict-grid">
-            <span>当前文件</span><strong>${conflict.drum.source_file}</strong>
-            <span>当前工序</span><strong>${conflict.currentTask.process_name}</strong>
-            <span>完成进度</span><strong>${conflict.completedCount}/${conflict.drum.tasks.length} 道，${conflict.completionRate}%</strong>
-            <span>扫码记录</span><strong>${conflict.scanCount} 条</strong>
-            <span>已打印标签</span><strong>${conflict.printedCount} 张</strong>
-          </div>
-          <div class="conflict-actions">
-            <button class="btn" type="button" data-action="cancel">取消上传</button>
-            <button class="btn primary" type="button" data-action="safe">安全更新（推荐）</button>
-            <button class="btn red" type="button" data-action="replace">整单重建</button>
-          </div>
-          <p class="conflict-tip">安全更新：保留已完成工序、扫码记录和二维码编码，只更新未完成工序计划。整单重建：按新文件重置该令号进度，适合尚未投产或测试数据。</p>
-        `;
-      }
-
-      function hideConflict() {
-        conflictPanel.hidden = true;
-        conflictPanel.innerHTML = "";
-      }
-
-      function showMsg(text, type) {
-        msg.textContent = text;
-        msg.className = `msg show ${type}`;
-      }
-    </script>
-  </body>
+    }, { threshold: 0.5 });
+    videoObs.observe(video);
+  </script>
+</body>
 </html>

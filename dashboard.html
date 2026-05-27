@@ -62,6 +62,7 @@
       <section class="board">
         <div id="boardHead" class="board-head"></div>
         <div id="processGrid" class="process-grid"></div>
+        <section id="recordDrawer" class="record-drawer" hidden></section>
         <section id="planningDrawer" class="planning-drawer" hidden></section>
       </section>
     </section>
@@ -73,11 +74,13 @@
     let state = stateStore.ensureSeedIfEmpty();
     let selectedDrumId = state.drums[0] ? state.drums[0].drum_id : "";
     let planningOpen = false;
+    let recordsOpen = false;
 
     const orderSearch = document.getElementById("orderSearch");
     const orderList = document.getElementById("orderList");
     const boardHead = document.getElementById("boardHead");
     const processGrid = document.getElementById("processGrid");
+    const recordDrawer = document.getElementById("recordDrawer");
     const planningDrawer = document.getElementById("planningDrawer");
 
     function selectedDrum() {
@@ -133,6 +136,7 @@
         <div class="board-stat"><span>当前工序</span><strong>${current.process_name}</strong></div>
         <div class="board-stat"><span>计划完工</span><strong>${drum.planned_finish_date}</strong></div>
         <div class="board-stat"><span>最近打卡</span><strong>${drum.last_checkin_time || "暂无"}</strong></div>
+        <button id="toggleRecords" class="btn" type="button">${recordsOpen ? "收起记录" : "打卡记录"}</button>
         <button id="togglePlan" class="btn primary" type="button">${planningOpen ? "收起计划" : "计划调整"}</button>
       `;
     }
@@ -144,6 +148,63 @@
           <small class="process-date">${task.planned_finish_date}</small>
         </div>
       `).join("");
+    }
+
+    function fallbackRecords(drum) {
+      return drum.tasks
+        .filter((task) => task.actual_finish_time)
+        .slice()
+        .reverse()
+        .map((task, index) => ({
+          record_id: `${drum.drum_id}-F${index}`,
+          process_sequence: task.process_sequence,
+          process_name: task.process_name,
+          action_type: "finish",
+          scan_time: task.actual_finish_time,
+          scan_user: task.finish_user || "扫码工人",
+        }));
+    }
+
+    function renderRecordDrawer(drum) {
+      recordDrawer.hidden = !recordsOpen;
+      if (!recordsOpen) {
+        recordDrawer.innerHTML = "";
+        return;
+      }
+      const records = drum.scanRecords && drum.scanRecords.length ? drum.scanRecords : fallbackRecords(drum);
+      recordDrawer.innerHTML = `
+        <div class="record-head">
+          <div>
+            <strong>锅筒工序打卡记录</strong>
+            <span>${drum.production_order_no} / ${drum.drawing_no} / ${drum.drum_name}</span>
+          </div>
+          <span class="record-count">共 ${records.length} 条</span>
+        </div>
+        ${records.length ? `
+          <table class="record-table">
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>工序</th>
+                <th>打卡人</th>
+                <th>打卡动作</th>
+                <th>完成时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${records.map((record) => `
+                <tr>
+                  <td>${record.process_sequence || "-"}</td>
+                  <td>${record.process_name}</td>
+                  <td>${record.scan_user || "扫码工人"}</td>
+                  <td>${record.action_type === "finish" ? "完成打卡" : record.action_type}</td>
+                  <td>${record.scan_time}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        ` : `<div class="record-empty">暂无打卡记录</div>`}
+      `;
     }
 
     function renderPlanningDrawer(drum) {
@@ -199,6 +260,7 @@
       renderOrderList();
       renderBoardHead(drum);
       renderProcessGrid(drum);
+      renderRecordDrawer(drum);
       renderPlanningDrawer(drum);
     }
 
@@ -208,12 +270,19 @@
       if (!item) return;
       selectedDrumId = item.dataset.drumId;
       planningOpen = false;
+      recordsOpen = false;
       render();
     });
 
     document.addEventListener("click", (event) => {
+      if (event.target.id === "toggleRecords") {
+        recordsOpen = !recordsOpen;
+        if (recordsOpen) planningOpen = false;
+        render();
+      }
       if (event.target.id === "togglePlan") {
         planningOpen = !planningOpen;
+        if (planningOpen) recordsOpen = false;
         render();
       }
       if (event.target.id === "savePlan") {

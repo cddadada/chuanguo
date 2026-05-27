@@ -482,7 +482,7 @@ button:disabled {
 
 .board-head {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(3, auto) auto;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, auto) auto auto;
   gap: 20px;
   align-items: center;
   padding-bottom: 14px;
@@ -559,12 +559,36 @@ button:disabled {
   padding-top: 16px;
 }
 
-.plan-head {
+.record-drawer {
+  border-top: 1px solid #e5e5e5;
+  padding-top: 16px;
+}
+
+.plan-head,
+.record-head {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
   margin-bottom: 10px;
+}
+
+.plan-head strong,
+.record-head strong {
+  display: block;
+}
+
+.plan-head span,
+.record-head span {
+  color: #666;
+  font-size: 12px;
+}
+
+.record-count {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d5f9f !important;
 }
 
 .plan-toolbar {
@@ -574,18 +598,28 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.plan-table {
+.plan-table,
+.record-table {
   width: 100%;
   border-collapse: collapse;
   background: #fff;
 }
 
 .plan-table th,
-.plan-table td {
+.plan-table td,
+.record-table th,
+.record-table td {
   padding: 10px;
   border: 1px solid #e5e5e5;
   text-align: left;
   font-size: 13px;
+}
+
+.record-empty {
+  padding: 18px;
+  color: #999;
+  background: #fafafa;
+  text-align: center;
 }
 
 .mobile-body {

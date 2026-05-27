@@ -3,7 +3,7 @@
 
   const PROCESS_NAMES = [
     "备料",
-    "卷制/纵缝",
+    "纵缝",
     "纵缝探伤",
     "环缝",
     "环缝探伤",
@@ -24,10 +24,9 @@
     "二次机加",
     "内部装置",
     "油漆包装",
-    "完工",
   ];
 
-  const KEY_PROCESSES = new Set(["纵缝探伤", "环缝探伤", "热处理", "水压", "油漆包装", "完工"]);
+  const KEY_PROCESSES = new Set(["纵缝探伤", "环缝探伤", "热处理", "水压", "油漆包装"]);
 
   const fallbackMemory = {
     routeSource: { uploaded: false, fileName: "", importedAt: "", orderCode: "", itemName: "" },
@@ -68,7 +67,60 @@
     state.routeSource = state.routeSource || { uploaded: false, fileName: "", importedAt: "", orderCode: "", itemName: "" };
     state.drums = Array.isArray(state.drums) ? state.drums : [];
     state.printJobs = Array.isArray(state.printJobs) ? state.printJobs : [];
+    state.drums = state.drums.map(normalizeDrumProcesses);
     return state;
+  }
+
+  function normalizeDrumProcesses(drum) {
+    if (!drum || !Array.isArray(drum.tasks)) return drum;
+    const oldTasksByName = new Map();
+    drum.tasks.forEach((task) => {
+      const normalizedName = task.process_name === "卷制/纵缝" ? "纵缝" : task.process_name;
+      if (normalizedName !== "完工" && !oldTasksByName.has(normalizedName)) {
+        oldTasksByName.set(normalizedName, { ...task, process_name: normalizedName });
+      }
+    });
+    drum.tasks = PROCESS_NAMES.map((processName, index) => {
+      const sequence = index + 1;
+      const existing = oldTasksByName.get(processName);
+      if (existing) {
+        return {
+          ...existing,
+          task_id: `${drum.production_order_no}-T${String(sequence).padStart(2, "0")}`,
+          process_name: processName,
+          process_sequence: sequence,
+        };
+      }
+      const plannedStart = addDays("2026-05-20", index);
+      const plannedFinish = addDays("2026-05-21", index);
+      return {
+        task_id: `${drum.production_order_no}-T${String(sequence).padStart(2, "0")}`,
+        process_name: processName,
+        process_sequence: sequence,
+        planned_start_date: plannedStart,
+        planned_finish_date: plannedFinish,
+        actual_finish_time: "",
+        finish_user: "",
+        status: "待开始",
+        delay_days: 0,
+        stagnation_hours: 0,
+      };
+    });
+    const firstPending = drum.tasks.find((task) => task.status !== "已完成");
+    if (firstPending && firstPending.status === "待开始") firstPending.status = "待完成";
+    drum.planned_finish_date = drum.tasks[drum.tasks.length - 1].planned_finish_date;
+    const completedTasks = drum.tasks.filter((task) => task.status === "已完成");
+    drum.last_checkin_time = completedTasks.length ? completedTasks[completedTasks.length - 1].actual_finish_time : "";
+    drum.scanRecords = Array.isArray(drum.scanRecords)
+      ? drum.scanRecords
+          .filter((record) => record.process_name !== "完工")
+          .map((record) => ({
+            ...record,
+            process_name: record.process_name === "卷制/纵缝" ? "纵缝" : record.process_name,
+            process_sequence: PROCESS_NAMES.indexOf(record.process_name === "卷制/纵缝" ? "纵缝" : record.process_name) + 1 || record.process_sequence,
+          }))
+      : [];
+    return drum;
   }
 
   function loadState() {
@@ -126,6 +178,82 @@
       scanRecords: [],
       notifyRecords: [],
     };
+  }
+
+  function applyDemoProgress(drum, completedCount, options = {}) {
+    const workers = options.workers || ["张师傅", "李师傅", "王师傅", "赵师傅", "陈师傅", "刘师傅"];
+    drum.tasks.forEach((task, index) => {
+      if (index < completedCount) {
+        const finishTime = `${task.planned_finish_date} ${index % 2 === 0 ? "10:20" : "16:45"}`;
+        task.status = "已完成";
+        task.actual_finish_time = finishTime;
+        task.finish_user = workers[index % workers.length];
+      } else if (index === completedCount) {
+        task.status = "待完成";
+        task.actual_finish_time = "";
+        task.finish_user = "";
+      } else {
+        task.status = "待开始";
+        task.actual_finish_time = "";
+        task.finish_user = "";
+      }
+    });
+    if (completedCount >= drum.tasks.length) {
+      drum.tasks.forEach((task) => {
+        if (!task.actual_finish_time) task.actual_finish_time = `${task.planned_finish_date} 17:00`;
+        if (!task.finish_user) task.finish_user = workers[task.process_sequence % workers.length];
+        task.status = "已完成";
+      });
+    }
+    const completedTasks = drum.tasks.filter((task) => task.status === "已完成");
+    drum.last_checkin_time = completedTasks.length ? completedTasks[completedTasks.length - 1].actual_finish_time : "";
+    drum.scanRecords = completedTasks.slice().reverse().map((task, index) => ({
+      record_id: `${drum.production_order_no}-R${String(index + 1).padStart(2, "0")}`,
+      drum_code: drum.drum_code,
+      process_name: task.process_name,
+      process_sequence: task.process_sequence,
+      action_type: "finish",
+      scan_time: task.actual_finish_time,
+      scan_user: task.finish_user,
+    }));
+    drum.notifyRecords = completedTasks
+      .filter((task) => KEY_PROCESSES.has(task.process_name))
+      .slice()
+      .reverse()
+      .map((task, index) => ({
+        notify_id: `${drum.production_order_no}-N${String(index + 1).padStart(2, "0")}`,
+        message: `${drum.project_name}：${drum.drum_name}${task.process_name}完成。`,
+        notify_time: task.actual_finish_time,
+      }));
+    return drum;
+  }
+
+  function createSeedDrums() {
+    return [
+      applyDemoProgress(createDrum("410503", "鞍山华泰新石项目250t/h干熄焦余热炉", "001.xls"), 4, {
+        workers: ["周建国", "王海", "李强", "陈斌"],
+      }),
+      applyDemoProgress(createDrum("1150053", "大连西太二期1x150t/h角管炉", "002.xls"), 0),
+      applyDemoProgress(createDrum("32167-1", "天脊煤化工50MW高加", "003.xls"), 11, {
+        workers: ["刘洋", "赵鹏", "宋杰", "何军"],
+      }),
+      applyDemoProgress(createDrum("3431", "上海申能新疆宜化项目#1、#2机组高加", "004.xls"), PROCESS_NAMES.length, {
+        workers: ["马俊", "唐立", "曹伟", "孙敏"],
+      }),
+      applyDemoProgress(createDrum("410504", "重庆三峰酉阳项目200t/d垃圾炉", "005.xls"), 18, {
+        workers: ["蒋涛", "罗军", "何师傅", "吴师傅"],
+      }),
+    ];
+  }
+
+  function ensureDemoDrums(state) {
+    const existingOrders = new Set(state.drums.map((drum) => drum.production_order_no));
+    createSeedDrums().forEach((demoDrum) => {
+      if (!existingOrders.has(demoDrum.production_order_no)) {
+        state.drums.push(demoDrum);
+      }
+    });
+    return state;
   }
 
   function inferCustomer(itemName) {
@@ -212,8 +340,20 @@
   function ensureSeedIfEmpty() {
     const state = loadState();
     if (!state.drums.length) {
-      uploadRoute({ orderCode: "410503", itemName: "鞍山华泰新石项目250t/h干熄焦余热炉", fileName: "001.xls" });
-      return loadState();
+      state.drums = createSeedDrums();
+      state.routeSource = {
+        uploaded: true,
+        fileName: "001.xls",
+        importedAt: currentTime(),
+        orderCode: "410503",
+        itemName: "鞍山华泰新石项目250t/h干熄焦余热炉",
+      };
+      saveState(state);
+      return state;
+    }
+    if (state.drums.length < 3) {
+      ensureDemoDrums(state);
+      saveState(state);
     }
     return state;
   }
@@ -266,9 +406,11 @@
     drum.scanRecords.unshift({
       record_id: `R-${Date.now()}`,
       drum_code: drum.drum_code,
+      process_sequence: task.process_sequence,
       process_name: task.process_name,
       action_type: "finish",
       scan_time: task.actual_finish_time,
+      scan_user: task.finish_user,
     });
     if (KEY_PROCESSES.has(task.process_name)) {
       drum.notifyRecords.unshift({
