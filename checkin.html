@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扫码完成打卡</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body class="mobile-body">
+  <main class="phone">
+    <header class="wflow-bar">
+      <span>‹</span>
+      <strong>工序打卡</strong>
+    </header>
+    <section class="checkin-content">
+      <div id="summaryCard" class="checkin-card"></div>
+      <div id="resultMsg" class="toast"></div>
+      <div id="progressList" class="progress-list"></div>
+    </section>
+  </main>
+
+  <script src="./assets/state.js"></script>
+  <script>
+    const stateStore = window.DrumDemo;
+    const summaryCard = document.getElementById("summaryCard");
+    const resultMsg = document.getElementById("resultMsg");
+    const progressList = document.getElementById("progressList");
+    const params = new URLSearchParams(window.location.search);
+    const rawId = params.get("id") || "";
+    const targetId = decodeURIComponent(rawId).split("|")[0] || "";
+    let toastTimer = 0;
+    let isAdvancing = false;
+
+    function currentDrum() {
+      return stateStore.findDrum(targetId);
+    }
+
+    function showToast(message) {
+      window.clearTimeout(toastTimer);
+      resultMsg.textContent = message;
+      resultMsg.classList.add("show");
+      toastTimer = window.setTimeout(() => {
+        resultMsg.classList.remove("show");
+      }, 1800);
+    }
+
+    function taskTimeLabel(task) {
+      if (task.actual_finish_time) return `完成时间：${task.actual_finish_time}`;
+      return `计划完成：${task.planned_finish_date}`;
+    }
+
+    function render(options = {}) {
+      const drum = currentDrum();
+      const current = stateStore.getCurrentTask(drum);
+      const isFinished = drum.tasks.every((task) => task.status === "已完成");
+      summaryCard.innerHTML = `
+        <p class="order-code-line">生产令号：<strong>${drum.production_order_no}</strong></p>
+        <p>项目：${drum.project_name}</p>
+        <p>图号：${drum.drawing_no} / ${drum.drum_name}</p>
+        <p>计划完成：${current.planned_finish_date}</p>
+      `;
+      progressList.innerHTML = drum.tasks.map((task) => {
+        const isCurrent = !isFinished && task.task_id === current.task_id;
+        return `
+        <div id="task-${task.process_sequence}" class="progress-row ${isCurrent ? "current" : ""}" data-task-id="${task.task_id}">
+          <span>${task.process_sequence}</span>
+          <div class="process-main">
+            <strong>${task.process_name}</strong>
+            <small>${taskTimeLabel(task)}</small>
+          </div>
+          <span class="status ${task.status === "已完成" ? "done" : "pending"}">${task.status}</span>
+          ${isCurrent ? `<button class="finish-btn inline" type="button" data-finish="${drum.drum_code}">完成该工序</button>` : ""}
+        </div>
+      `;
+      }).join("");
+
+      if (options.scrollToCurrent !== false) {
+        window.setTimeout(() => {
+          const currentRow = progressList.querySelector(".progress-row.current");
+          if (currentRow) currentRow.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 80);
+      }
+    }
+
+    progressList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-finish]");
+      if (!button || isAdvancing) return;
+      isAdvancing = true;
+      button.disabled = true;
+      button.textContent = "提交中...";
+      button.closest(".progress-row")?.classList.add("is-submitting");
+      const result = stateStore.completeCurrentTask(button.dataset.finish);
+      showToast(`${result.task.process_name} 已完成`);
+      window.setTimeout(() => {
+        render();
+        isAdvancing = false;
+      }, 900);
+    });
+
+    render();
+  </script>
+</body>
+</html>

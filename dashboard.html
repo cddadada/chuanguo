@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>核容分厂厂长看板</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body class="weiwo-page">
+  <aside class="weiwo-sidebar">
+    <div class="weiwo-logo"><span>W</span>帷幄</div>
+    <nav class="weiwo-menu" aria-label="分厂管理菜单">
+      <div>当知当行</div>
+      <div>CG Compass</div>
+      <div>CG Notes</div>
+      <div>CG Meeting</div>
+      <div>CG Flow</div>
+      <div>CG Knowledge</div>
+      <div>QMS</div>
+      <div>TPM</div>
+      <div>HSE</div>
+      <div class="active">分厂管理</div>
+      <div>WMS</div>
+      <div>快捷入口</div>
+    </nav>
+  </aside>
+
+  <aside class="weiwo-subnav">
+    <div class="subnav-title">分厂管理</div>
+    <nav aria-label="生产管理菜单">
+      <button type="button">生产实时</button>
+      <button type="button">智能监盘</button>
+      <button type="button" class="open">生产管理</button>
+      <div class="subnav-children">
+        <button type="button">工序打卡</button>
+        <button type="button" class="active">核容锅筒工序打卡</button>
+        <button type="button">工艺管理</button>
+      </div>
+      <button type="button">设计&工艺&质量</button>
+      <button type="button">设备管理</button>
+      <button type="button">安全管理</button>
+      <button type="button">应急管理</button>
+      <button type="button">职业健康</button>
+    </nav>
+  </aside>
+
+  <main class="weiwo-main">
+    <header class="weiwo-header">
+      <div class="weiwo-title">分厂管理</div>
+      <span>生产管理 / 工序打卡 / 核容锅筒工序打卡</span>
+    </header>
+
+    <section class="weiwo-content">
+      <aside class="order-rail">
+        <div class="rail-search">
+          <input id="orderSearch" class="field" type="search" placeholder="搜索令号">
+        </div>
+        <div class="rail-title">令号状态</div>
+        <div id="orderList" class="order-list"></div>
+      </aside>
+
+      <section class="board">
+        <div id="boardHead" class="board-head"></div>
+        <div id="processGrid" class="process-grid"></div>
+        <section id="planningDrawer" class="planning-drawer" hidden></section>
+      </section>
+    </section>
+  </main>
+
+  <script src="./assets/state.js"></script>
+  <script>
+    const stateStore = window.DrumDemo;
+    let state = stateStore.ensureSeedIfEmpty();
+    let selectedDrumId = state.drums[0] ? state.drums[0].drum_id : "";
+    let planningOpen = false;
+
+    const orderSearch = document.getElementById("orderSearch");
+    const orderList = document.getElementById("orderList");
+    const boardHead = document.getElementById("boardHead");
+    const processGrid = document.getElementById("processGrid");
+    const planningDrawer = document.getElementById("planningDrawer");
+
+    function selectedDrum() {
+      return state.drums.find((drum) => drum.drum_id === selectedDrumId) || state.drums[0];
+    }
+
+    function statusClass(status) {
+      if (status === "已完成") return "done";
+      if (status === "待完成") return "current";
+      if (status === "延期") return "delay";
+      if (status === "停滞") return "stagnant";
+      return "";
+    }
+
+    function orderGroup(drum) {
+      const rate = stateStore.getCompletionRate(drum);
+      const current = stateStore.getCurrentTask(drum);
+      if (rate === 100) return "已完成";
+      if (current.process_sequence === 1 && current.status !== "已完成") return "待启动";
+      return "在制";
+    }
+
+    function renderOrderList() {
+      const keyword = orderSearch.value.trim();
+      const drums = state.drums.filter((drum) => {
+        const text = `${drum.production_order_no}${drum.project_name}${drum.customer_name}`;
+        return !keyword || text.includes(keyword);
+      });
+      const groups = ["在制", "待启动", "已完成"];
+      orderList.innerHTML = groups.map((group) => {
+        const groupDrums = drums.filter((drum) => orderGroup(drum) === group);
+        return `
+          <section class="order-group">
+            <div class="order-group-title">${group}</div>
+            ${groupDrums.length ? groupDrums.map((drum) => `
+              <button class="order-item ${drum.drum_id === selectedDrumId ? "active" : ""}" data-drum-id="${drum.drum_id}">
+                <strong>${drum.production_order_no}</strong>
+                <span>${drum.project_name}</span>
+              </button>
+            `).join("") : `<div class="order-empty">暂无</div>`}
+          </section>
+        `;
+      }).join("");
+    }
+
+    function renderBoardHead(drum) {
+      const current = stateStore.getCurrentTask(drum);
+      boardHead.innerHTML = `
+        <div class="board-title">
+          <strong>${drum.production_order_no} ${drum.drum_name}进度</strong>
+          <span>${drum.project_name} / ${drum.drawing_no}</span>
+        </div>
+        <div class="board-stat"><span>当前工序</span><strong>${current.process_name}</strong></div>
+        <div class="board-stat"><span>计划完工</span><strong>${drum.planned_finish_date}</strong></div>
+        <div class="board-stat"><span>最近打卡</span><strong>${drum.last_checkin_time || "暂无"}</strong></div>
+        <button id="togglePlan" class="btn primary" type="button">${planningOpen ? "收起计划" : "计划调整"}</button>
+      `;
+    }
+
+    function renderProcessGrid(drum) {
+      processGrid.innerHTML = drum.tasks.map((task) => `
+        <div class="process-pill ${statusClass(task.status)}">
+          <strong class="process-name">${task.process_sequence}. ${task.process_name}</strong>
+          <small class="process-date">${task.planned_finish_date}</small>
+        </div>
+      `).join("");
+    }
+
+    function renderPlanningDrawer(drum) {
+      planningDrawer.hidden = !planningOpen;
+      if (!planningOpen) {
+        planningDrawer.innerHTML = "";
+        return;
+      }
+      planningDrawer.innerHTML = `
+        <div class="plan-head">
+          <div>
+            <strong>锅筒主线工序计划调整</strong>
+            <span>只维护锅筒级工序的计划开始和计划完工日期。</span>
+          </div>
+          <button id="savePlan" class="btn primary" type="button">保存计划</button>
+        </div>
+        <div class="plan-toolbar">
+          <input class="field" value="${drum.production_order_no}" readonly>
+          <input class="field" value="${drum.drum_name}" readonly>
+          <input class="field" value="${drum.factory}" readonly>
+          <input class="field" value="${drum.source_file}" readonly>
+        </div>
+        <table class="plan-table">
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>主线工序</th>
+              <th>状态</th>
+              <th>计划开始</th>
+              <th>计划完工</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${drum.tasks.map((task) => `
+              <tr>
+                <td>${task.process_sequence}</td>
+                <td>${task.process_name}</td>
+                <td><span class="status ${task.status === "已完成" ? "done" : "pending"}">${task.status}</span></td>
+                <td><input class="field plan-date-input" data-task-id="${task.task_id}" data-field="planned_start_date" type="date" value="${task.planned_start_date}"></td>
+                <td><input class="field plan-date-input" data-task-id="${task.task_id}" data-field="planned_finish_date" type="date" value="${task.planned_finish_date}"></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      `;
+    }
+
+    function render() {
+      state = stateStore.loadState();
+      if (!state.drums.length) state = stateStore.ensureSeedIfEmpty();
+      if (!selectedDrum()) selectedDrumId = state.drums[0].drum_id;
+      const drum = selectedDrum();
+      renderOrderList();
+      renderBoardHead(drum);
+      renderProcessGrid(drum);
+      renderPlanningDrawer(drum);
+    }
+
+    orderSearch.addEventListener("input", renderOrderList);
+    orderList.addEventListener("click", (event) => {
+      const item = event.target.closest("[data-drum-id]");
+      if (!item) return;
+      selectedDrumId = item.dataset.drumId;
+      planningOpen = false;
+      render();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.id === "togglePlan") {
+        planningOpen = !planningOpen;
+        render();
+      }
+      if (event.target.id === "savePlan") {
+        const rows = [];
+        document.querySelectorAll(".plan-date-input[data-field='planned_start_date']").forEach((input) => {
+          const finishInput = document.querySelector(`.plan-date-input[data-task-id="${input.dataset.taskId}"][data-field="planned_finish_date"]`);
+          rows.push({
+            task_id: input.dataset.taskId,
+            planned_start_date: input.value,
+            planned_finish_date: finishInput ? finishInput.value : input.value,
+          });
+        });
+        stateStore.savePlanDates(selectedDrumId, rows);
+        render();
+      }
+    });
+
+    window.addEventListener("storage", render);
+    render();
+  </script>
+</body>
+</html>

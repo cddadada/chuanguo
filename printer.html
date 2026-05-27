@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>热敏打印机二维码生成</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body class="mobile-body">
+  <main class="phone">
+    <header class="android-bar">
+      <span>◇</span>
+      <strong>川锅公司发运管理系统</strong>
+    </header>
+    <section class="android-content">
+      <div class="search-line">搜索令号、图号、项目</div>
+      <div id="printList"></div>
+      <div id="paperPreview" class="paper-preview"></div>
+    </section>
+  </main>
+
+  <script src="./assets/state.js"></script>
+  <script>
+    const stateStore = window.DrumDemo;
+    const printList = document.getElementById("printList");
+    const paperPreview = document.getElementById("paperPreview");
+
+    function renderList() {
+      const state = stateStore.loadState().drums.length ? stateStore.loadState() : stateStore.ensureSeedIfEmpty();
+      printList.innerHTML = state.drums.map((drum) => {
+        const current = stateStore.getCurrentTask(drum);
+        return `
+          <article class="print-card">
+            <div>
+              <strong>${drum.production_order_no}</strong>
+              <span>${drum.project_name}</span>
+              <span>${drum.drawing_no} / ${drum.drum_name}</span>
+              <span><b class="status ${current.status === "已完成" ? "done" : "pending"}">${current.status}</b></span>
+            </div>
+            <button class="btn red" type="button" data-print="${drum.drum_id}">打印</button>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function renderPaper(drum, job) {
+      paperPreview.classList.add("show");
+      paperPreview.innerHTML = `
+        <div class="qr" aria-label="二维码示意"></div>
+        <div class="label-info">
+          <strong>${drum.production_order_no} ${drum.drum_name}</strong>
+          <p>项目：${drum.project_name}</p>
+          <p>图号：${drum.drawing_no}</p>
+          <p>标签贴到初始备料工段钢板上，随工序流转。</p>
+        </div>
+      `;
+    }
+
+    printList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-print]");
+      if (!button) return;
+      const result = stateStore.printLabel(button.dataset.print);
+      renderPaper(result.drum, result.job);
+    });
+
+    renderList();
+  </script>
+</body>
+</html>
