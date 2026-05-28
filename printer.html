@@ -13,7 +13,7 @@
       <strong>川锅公司发运管理系统</strong>
     </header>
     <section class="android-content">
-      <div class="search-line">搜索令号、图号、项目</div>
+      <input id="printSearch" class="search-line" type="search" placeholder="搜索令号" autocomplete="off">
       <div id="printList"></div>
       <div id="paperPreview" class="paper-preview"></div>
     </section>
@@ -24,20 +24,67 @@
     const stateStore = window.DrumDemo;
     const printList = document.getElementById("printList");
     const paperPreview = document.getElementById("paperPreview");
+    const printSearch = document.getElementById("printSearch");
+    let expandedOrderCode = "";
 
-    function renderList() {
+    function orderGroup(orderDrums) {
+      const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
+      const currents = orderDrums.map((drum) => stateStore.getCurrentTask(drum));
+      if (rates.every((rate) => rate === 100)) return "已完成";
+      if (currents.every((current) => current.process_sequence === 1 && current.status !== "已完成")) return "待启动";
+      return "在制";
+    }
+
+    function orderRank(orderDrums) {
+      const group = orderGroup(orderDrums);
+      if (group === "在制") return 0;
+      if (group === "待启动") return 1;
+      return 2;
+    }
+
+    function drumsByOrder(state) {
+      const map = new Map();
+      state.drums.forEach((drum) => {
+        if (!map.has(drum.production_order_no)) map.set(drum.production_order_no, []);
+        map.get(drum.production_order_no).push(drum);
+      });
+      return [...map.values()]
+        .map((drums) => drums.sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN")))
+        .sort((a, b) => orderRank(a) - orderRank(b) || a[0].production_order_no.localeCompare(b[0].production_order_no, "zh-Hans-CN"));
+    }
+
+    function renderList(keyword = "") {
       const state = stateStore.loadState().drums.length ? stateStore.loadState() : stateStore.ensureSeedIfEmpty();
-      printList.innerHTML = state.drums.map((drum) => {
-        const current = stateStore.getCurrentTask(drum);
+      const orders = drumsByOrder(state).filter((orderDrums) => !keyword || orderDrums[0].production_order_no.includes(keyword));
+      printList.innerHTML = orders.map((orderDrums) => {
+        const first = orderDrums[0];
+        const group = orderGroup(orderDrums);
+        const multiple = orderDrums.length > 1;
+        const isExpanded = expandedOrderCode === first.production_order_no;
         return `
-          <article class="print-card">
-            <div>
-              <strong>${drum.production_order_no}</strong>
-              <span>${drum.project_name}</span>
-              <span>${drum.drawing_no} / ${drum.drum_name}</span>
-              <span><b class="status ${current.status === "已完成" ? "done" : "pending"}">${current.status}</b></span>
-            </div>
-            <button class="btn red" type="button" data-print="${drum.drum_id}">打印</button>
+          <article class="print-card order-print-card">
+            <button class="print-order-main" type="button" ${multiple ? `data-toggle-order="${first.production_order_no}"` : `data-print="${first.drum_id}"`}>
+              <strong>${first.production_order_no}</strong>
+              <span>${first.project_name}</span>
+              <span>${orderDrums.length} 个锅筒：${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
+              <span><b class="status ${group === "已完成" ? "done" : "pending"}">${group}</b></span>
+            </button>
+            <button class="btn red" type="button" ${multiple ? `data-toggle-order="${first.production_order_no}"` : `data-print="${first.drum_id}"`}>
+              打印
+            </button>
+            ${multiple && isExpanded ? `
+              <div class="print-drum-options">
+                ${orderDrums.map((drum, index) => {
+                  return `
+                    <button type="button" data-print="${drum.drum_id}">
+                      <strong>锅筒 ${index + 1}</strong>
+                      <span>${drum.drawing_no}</span>
+                      <b>打印</b>
+                    </button>
+                  `;
+                }).join("")}
+              </div>
+            ` : ""}
           </article>
         `;
       }).join("");
@@ -48,7 +95,7 @@
       paperPreview.innerHTML = `
         <div class="qr" aria-label="二维码示意"></div>
         <div class="label-info">
-          <strong>${drum.production_order_no} ${drum.drum_name}</strong>
+          <strong>${drum.production_order_no}</strong>
           <p>项目：${drum.project_name}</p>
           <p>图号：${drum.drawing_no}</p>
           <p>标签贴到初始备料工段钢板上，随工序流转。</p>
@@ -57,10 +104,22 @@
     }
 
     printList.addEventListener("click", (event) => {
+      const orderButton = event.target.closest("[data-toggle-order]");
+      if (orderButton) {
+        expandedOrderCode = expandedOrderCode === orderButton.dataset.toggleOrder ? "" : orderButton.dataset.toggleOrder;
+        renderList(printSearch.value.trim());
+        return;
+      }
       const button = event.target.closest("[data-print]");
       if (!button) return;
       const result = stateStore.printLabel(button.dataset.print);
       renderPaper(result.drum, result.job);
+    });
+
+    printSearch.addEventListener("input", () => {
+      const keyword = printSearch.value.trim();
+      expandedOrderCode = "";
+      renderList(keyword);
     });
 
     renderList();

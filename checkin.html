@@ -53,9 +53,15 @@
       const drum = currentDrum();
       const current = stateStore.getCurrentTask(drum);
       const isFinished = drum.tasks.every((task) => task.status === "已完成");
+      const state = stateStore.loadState();
+      const orderDrums = state.drums
+        .filter((item) => item.production_order_no === drum.production_order_no)
+        .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
+      const drumIndex = orderDrums.findIndex((item) => item.drum_id === drum.drum_id) + 1;
       summaryCard.innerHTML = `
         <p class="order-code-line">生产令号：<strong>${drum.production_order_no}</strong></p>
         <p>项目：${drum.project_name}</p>
+        <p>锅筒：锅筒 ${drumIndex || 1} / 共 ${orderDrums.length || 1} 个</p>
         <p>图号：${drum.drawing_no} / ${drum.drum_name}</p>
         <p>计划完成：${current.planned_finish_date}</p>
       `;

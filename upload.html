@@ -33,7 +33,6 @@
       </section>
 
       <button class="submit-btn" id="submitBtn">保存登记</button>
-      <section class="conflict-panel" id="conflictPanel" hidden></section>
       <div class="msg" id="msg"></div>
     </main>
 
@@ -45,25 +44,25 @@
       const drumRows = document.getElementById("drumRows");
       const submitBtn = document.getElementById("submitBtn");
       const msg = document.getElementById("msg");
-      const conflictPanel = document.getElementById("conflictPanel");
       let rowId = 0;
-      let pendingRegistration = null;
 
       function defaultDrawingNo() {
-        const orderCode = orderCodeInput.value.trim() || "1150053";
+        const orderCode = orderCodeInput.value.trim();
+        if (!orderCode) return "";
         const count = drumRows.querySelectorAll(".drum-row").length + 1;
         return `${orderCode}.${String(count).padStart(3, "0")}.0`;
       }
 
-      function addDrumRow(value = "") {
+      function addDrumRow(value = "", options = {}) {
         rowId += 1;
+        const drawingValue = value || (options.useDefault === false ? "" : defaultDrawingNo());
         const row = document.createElement("div");
         row.className = "drum-row";
         row.dataset.rowId = String(rowId);
         row.innerHTML = `
           <span class="drum-row-index">${drumRows.children.length + 1}</span>
-          <input class="field drum-drawing" type="text" value="${value || defaultDrawingNo()}" placeholder="例如：1150053.001.0" autocomplete="off" />
-          <input class="field drum-name" type="text" value="锅筒" autocomplete="off" />
+          <span class="drum-name-fixed"></span>
+          <input class="field drum-drawing" type="text" value="${drawingValue}" placeholder="例如：1150053.001.0" autocomplete="off" />
           <button class="btn" type="button" data-remove-row>移除</button>
         `;
         drumRows.appendChild(row);
@@ -74,16 +73,23 @@
         const rows = [...drumRows.querySelectorAll(".drum-row")];
         rows.forEach((row, index) => {
           row.querySelector(".drum-row-index").textContent = index + 1;
+          row.querySelector(".drum-name-fixed").textContent = `锅筒 ${index + 1}`;
           row.querySelector("[data-remove-row]").disabled = rows.length === 1;
         });
+        syncAddButtonState();
+      }
+
+      function syncAddButtonState() {
+        const firstDrawing = drumRows.querySelector(".drum-drawing")?.value.trim() || "";
+        addDrumBtn.disabled = !firstDrawing;
       }
 
       function readPayload() {
         const orderCode = orderCodeInput.value.trim();
         const itemName = itemNameInput.value.trim();
-        const drums = [...drumRows.querySelectorAll(".drum-row")].map((row) => ({
+        const drums = [...drumRows.querySelectorAll(".drum-row")].map((row, index) => ({
           drawingNo: row.querySelector(".drum-drawing").value.trim(),
-          drumName: row.querySelector(".drum-name").value.trim() || "锅筒",
+          drumName: `锅筒 ${index + 1}`,
         }));
         return { orderCode, itemName, drums };
       }
@@ -98,8 +104,13 @@
       }
 
       addDrumBtn.addEventListener("click", () => {
+        if (addDrumBtn.disabled) return;
         addDrumRow();
-        hideConflict();
+      });
+
+      drumRows.addEventListener("input", (event) => {
+        if (!event.target.classList.contains("drum-drawing")) return;
+        syncAddButtonState();
       });
 
       drumRows.addEventListener("click", (event) => {
@@ -107,7 +118,6 @@
         if (!button) return;
         button.closest(".drum-row").remove();
         syncRowState();
-        hideConflict();
       });
 
       submitBtn.addEventListener("click", () => {
@@ -116,65 +126,31 @@
         if (error) return showMsg(error, "error");
 
         const conflict = DrumDemo.getRegistrationConflict(payload.orderCode, payload.drums.map((drum) => drum.drawingNo));
-        if (conflict) {
-          pendingRegistration = payload;
-          return showConflict(conflict, payload);
+        if (conflict?.orderDrums.length) {
+          return showMsg("该令号已经登记，不允许重复提交", "error");
         }
 
         runRegistration(payload);
       });
 
-      conflictPanel.addEventListener("click", (event) => {
-        const action = event.target.dataset.action;
-        if (!action) return;
-        if (action === "cancel") {
-          hideConflict();
-          showMsg("已取消登记，现有锅筒数据不变。", "error");
-          return;
-        }
-        if (!pendingRegistration) return;
-        runRegistration(pendingRegistration);
-      });
-
       function runRegistration(payload) {
-        hideConflict();
         submitBtn.disabled = true;
         submitBtn.textContent = "保存中...";
         setTimeout(() => {
           const result = DrumDemo.registerDrums({ ...payload, mode: "safeMerge", sourceName: "手工登记" });
           submitBtn.disabled = false;
           submitBtn.textContent = "保存登记";
-          pendingRegistration = null;
-          showMsg(`登记成功：${payload.orderCode} 已生成/更新 ${result.changedDrums.length} 个锅筒。`, "success");
+          resetForm();
+          showMsg(`保存成功：已登记 ${payload.orderCode} ${result.changedDrums.length} 个锅筒。`, "success");
         }, 250);
       }
 
-      function showConflict(conflict, payload) {
-        msg.className = "msg";
-        const existingText = conflict.orderDrums.map((drum) => `${drum.drawing_no}（${DrumDemo.getCurrentTask(drum).process_name}）`).join("、");
-        const matchingText = conflict.matchingDrums.length ? conflict.matchingDrums.map((drum) => drum.drawing_no).join("、") : "无";
-        conflictPanel.hidden = false;
-        conflictPanel.innerHTML = `
-          <h2>检测到该令号已有锅筒数据</h2>
-          <p>系统不会删除未填写的旧锅筒；本次只新增或更新表单里的图号。已存在图号会保留二维码、打卡记录和已完成工序。</p>
-          <div class="conflict-grid">
-            <span>令号</span><strong>${payload.orderCode}</strong>
-            <span>现有锅筒</span><strong>${existingText}</strong>
-            <span>本次命中</span><strong>${matchingText}</strong>
-            <span>扫码记录</span><strong>${conflict.scanCount} 条</strong>
-            <span>已打印标签</span><strong>${conflict.printedCount} 张</strong>
-          </div>
-          <div class="conflict-actions">
-            <button class="btn" type="button" data-action="cancel">取消</button>
-            <button class="btn primary" type="button" data-action="merge">继续登记</button>
-          </div>
-          <p class="conflict-tip">继续登记：新增图号会生成新二维码；已存在图号只更新项目名称/锅筒名称，保留生产过程数据。</p>
-        `;
-      }
-
-      function hideConflict() {
-        conflictPanel.hidden = true;
-        conflictPanel.innerHTML = "";
+      function resetForm() {
+        orderCodeInput.value = "";
+        itemNameInput.value = "";
+        drumRows.innerHTML = "";
+        rowId = 0;
+        addDrumRow("", { useDefault: false });
       }
 
       function showMsg(text, type) {

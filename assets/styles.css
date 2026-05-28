@@ -66,6 +66,11 @@ button:disabled {
   color: var(--text);
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .btn.primary {
   border-color: var(--blue);
   background: var(--blue);
@@ -227,9 +232,21 @@ button:disabled {
 
 .drum-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1.2fr) minmax(90px, 0.6fr) auto;
+  grid-template-columns: 30px 88px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.drum-name-fixed {
+  display: grid;
+  align-items: center;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #555;
+  font-weight: 600;
 }
 
 .drum-row-index {
@@ -546,10 +563,7 @@ button:disabled {
 }
 
 .board-head {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) repeat(3, auto) auto auto;
-  gap: 20px;
-  align-items: center;
+  display: block;
   padding-bottom: 14px;
   border-bottom: 1px solid #e5e5e5;
 }
@@ -593,11 +607,58 @@ button:disabled {
   font-size: 16px;
 }
 
+.drum-board-list {
+  display: grid;
+  gap: 18px;
+  padding: 18px 0;
+}
+
+.drum-board-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.drum-card-head {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(260px, 1.5fr) auto;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.drum-card-title strong,
+.drum-card-title span {
+  display: block;
+}
+
+.drum-card-title strong {
+  font-size: 18px;
+}
+
+.drum-card-title span {
+  margin-top: 4px;
+  color: #666;
+  font-size: 12px;
+}
+
+.drum-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.drum-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .process-grid {
   display: grid;
   grid-template-columns: repeat(8, minmax(76px, 1fr));
   gap: 8px;
-  padding: 20px 0;
 }
 
 .process-pill {
@@ -643,11 +704,13 @@ button:disabled {
 
 .planning-drawer {
   border-top: 1px solid #e5e5e5;
+  margin-top: 14px;
   padding-top: 16px;
 }
 
 .record-drawer {
   border-top: 1px solid #e5e5e5;
+  margin-top: 14px;
   padding-top: 16px;
 }
 
@@ -752,14 +815,15 @@ button:disabled {
 }
 
 .search-line {
+  width: 100%;
   height: 38px;
   margin-bottom: 12px;
   padding: 0 12px;
+  border: 0;
+  outline: none;
   border-radius: 19px;
   background: #fff;
-  color: #aaa;
-  display: flex;
-  align-items: center;
+  color: var(--text);
 }
 
 .print-card {
@@ -773,6 +837,13 @@ button:disabled {
   box-shadow: 0 1px 7px rgba(0, 0, 0, 0.06);
 }
 
+.print-order-main {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
 .print-card strong {
   font-size: 22px;
 }
@@ -782,6 +853,43 @@ button:disabled {
   margin-top: 4px;
   color: #888;
   font-size: 12px;
+}
+
+.print-drum-options {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #edf0f5;
+}
+
+.print-drum-options button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  text-align: left;
+}
+
+.print-drum-options button strong {
+  font-size: 14px;
+}
+
+.print-drum-options button span {
+  margin: 0;
+}
+
+.print-drum-options button b {
+  justify-self: end;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--red);
+  color: #fff;
 }
 
 .paper-preview {
@@ -797,16 +905,17 @@ button:disabled {
   grid-template-columns: 1fr;
   gap: 12px;
   justify-items: center;
-  text-align: center;
 }
 
 .paper-preview .label-info {
   width: 100%;
+  text-align: left;
 }
 
 .paper-preview .label-info strong {
   display: block;
   margin-bottom: 10px;
+  text-align: center;
 }
 
 .paper-preview .label-info p {
@@ -935,8 +1044,14 @@ button:disabled {
   }
 
   .board-head,
-  .plan-toolbar {
+  .plan-toolbar,
+  .drum-card-head,
+  .drum-card-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .drum-card-head {
+    display: grid;
   }
 
   .process-grid {
