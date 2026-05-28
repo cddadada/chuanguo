@@ -62,6 +62,22 @@
     return date.toISOString().slice(0, 10);
   }
 
+  function normalizeDrawingNo(value, fallback) {
+    return String(value || fallback || "").trim();
+  }
+
+  function compactCode(value) {
+    return String(value || "").replace(/[^0-9A-Za-z\u4e00-\u9fa5]/g, "");
+  }
+
+  function buildDrumId(orderCode, drawingNo) {
+    return `D-${orderCode}-${compactCode(drawingNo) || "DRUM"}`;
+  }
+
+  function buildDrumCode(orderCode, drawingNo) {
+    return `DRUM-${orderCode}-${compactCode(drawingNo) || "DRUM"}`;
+  }
+
   function normalizeState(raw) {
     const state = raw && typeof raw === "object" ? raw : {};
     state.routeSource = state.routeSource || { uploaded: false, fileName: "", importedAt: "", orderCode: "", itemName: "" };
@@ -73,6 +89,10 @@
 
   function normalizeDrumProcesses(drum) {
     if (!drum || !Array.isArray(drum.tasks)) return drum;
+    drum.drawing_no = normalizeDrawingNo(drum.drawing_no, `${drum.production_order_no}.001.0`);
+    drum.drum_name = drum.drum_name || "锅筒";
+    drum.drum_id = drum.drum_id || buildDrumId(drum.production_order_no, drum.drawing_no);
+    drum.drum_code = drum.drum_code || buildDrumCode(drum.production_order_no, drum.drawing_no);
     const oldTasksByName = new Map();
     drum.tasks.forEach((task) => {
       const normalizedName = task.process_name === "卷制/纵缝" ? "纵缝" : task.process_name;
@@ -86,7 +106,7 @@
       if (existing) {
         return {
           ...existing,
-          task_id: `${drum.production_order_no}-T${String(sequence).padStart(2, "0")}`,
+          task_id: `${drum.drum_id}-T${String(sequence).padStart(2, "0")}`,
           process_name: processName,
           process_sequence: sequence,
         };
@@ -94,7 +114,7 @@
       const plannedStart = addDays("2026-05-20", index);
       const plannedFinish = addDays("2026-05-21", index);
       return {
-        task_id: `${drum.production_order_no}-T${String(sequence).padStart(2, "0")}`,
+        task_id: `${drum.drum_id}-T${String(sequence).padStart(2, "0")}`,
         process_name: processName,
         process_sequence: sequence,
         planned_start_date: plannedStart,
@@ -139,17 +159,19 @@
     safeSet(JSON.stringify(normalizeState(state)));
   }
 
-  function createDrum(orderCode, itemName, fileName) {
+  function createDrum(orderCode, itemName, fileName, options = {}) {
     const customer = inferCustomer(itemName);
     const project = inferProject(itemName);
-    const drawingNo = orderCode === "410503" ? "410503.001.0" : `${orderCode}.001.0`;
+    const drawingNo = normalizeDrawingNo(options.drawingNo, orderCode === "410503" ? "410503.001.0" : `${orderCode}.001.0`);
+    const drumId = buildDrumId(orderCode, drawingNo);
+    const drumCode = buildDrumCode(orderCode, drawingNo);
     const tasks = PROCESS_NAMES.map((processName, index) => {
       const sequence = index + 1;
       const plannedStart = addDays("2026-05-20", index);
       const plannedFinish = addDays("2026-05-21", index);
       const isDone = sequence < 4;
       return {
-        task_id: `${orderCode}-T${String(sequence).padStart(2, "0")}`,
+        task_id: `${drumId}-T${String(sequence).padStart(2, "0")}`,
         process_name: processName,
         process_sequence: sequence,
         planned_start_date: plannedStart,
@@ -163,15 +185,15 @@
     });
 
     return {
-      drum_id: `D-${orderCode}`,
-      drum_code: `DRUM-${orderCode}-${drawingNo.replaceAll(".", "")}`,
+      drum_id: drumId,
+      drum_code: drumCode,
       production_order_no: orderCode,
       customer_name: customer,
       project_name: project,
       drawing_no: drawingNo,
-      drum_name: "锅筒",
+      drum_name: options.drumName || "锅筒",
       factory: "核容分厂",
-      source_file: fileName || "工艺路线表.zip",
+      source_file: fileName || "手工登记",
       planned_finish_date: tasks[tasks.length - 1].planned_finish_date,
       last_checkin_time: tasks[2].actual_finish_time,
       tasks,
@@ -230,27 +252,33 @@
 
   function createSeedDrums() {
     return [
-      applyDemoProgress(createDrum("410503", "鞍山华泰新石项目250t/h干熄焦余热炉", "001.xls"), 4, {
+      applyDemoProgress(createDrum("410503", "鞍山华泰新石项目250t/h干熄焦余热炉", "手工登记", { drawingNo: "410503.001.0" }), 4, {
         workers: ["周建国", "王海", "李强", "陈斌"],
       }),
-      applyDemoProgress(createDrum("1150053", "大连西太二期1x150t/h角管炉", "002.xls"), 0),
-      applyDemoProgress(createDrum("32167-1", "天脊煤化工50MW高加", "003.xls"), 11, {
+      applyDemoProgress(createDrum("410503", "鞍山华泰新石项目250t/h干熄焦余热炉", "手工登记", { drawingNo: "410503.002.0" }), 1, {
+        workers: ["周建国", "王海", "李强", "陈斌"],
+      }),
+      applyDemoProgress(createDrum("1150053", "大连西太二期1x150t/h角管炉", "手工登记", { drawingNo: "1150053.001.0" }), 0),
+      applyDemoProgress(createDrum("1150053", "大连西太二期1x150t/h角管炉", "手工登记", { drawingNo: "1150053.002.0" }), 7),
+      applyDemoProgress(createDrum("32167-1", "天脊煤化工50MW高加", "手工登记"), 11, {
         workers: ["刘洋", "赵鹏", "宋杰", "何军"],
       }),
-      applyDemoProgress(createDrum("3431", "上海申能新疆宜化项目#1、#2机组高加", "004.xls"), PROCESS_NAMES.length, {
+      applyDemoProgress(createDrum("3431", "上海申能新疆宜化项目#1、#2机组高加", "手工登记"), PROCESS_NAMES.length, {
         workers: ["马俊", "唐立", "曹伟", "孙敏"],
       }),
-      applyDemoProgress(createDrum("410504", "重庆三峰酉阳项目200t/d垃圾炉", "005.xls"), 18, {
+      applyDemoProgress(createDrum("410504", "重庆三峰酉阳项目200t/d垃圾炉", "手工登记"), 18, {
         workers: ["蒋涛", "罗军", "何师傅", "吴师傅"],
       }),
     ];
   }
 
   function ensureDemoDrums(state) {
-    const existingOrders = new Set(state.drums.map((drum) => drum.production_order_no));
+    const existingDrumKeys = new Set(state.drums.map((drum) => `${drum.production_order_no}|${drum.drawing_no}`));
     createSeedDrums().forEach((demoDrum) => {
-      if (!existingOrders.has(demoDrum.production_order_no)) {
+      const key = `${demoDrum.production_order_no}|${demoDrum.drawing_no}`;
+      if (!existingDrumKeys.has(key)) {
         state.drums.push(demoDrum);
+        existingDrumKeys.add(key);
       }
     });
     return state;
@@ -286,6 +314,23 @@
     };
   }
 
+  function getRegistrationConflict(orderCode, drawingNos = []) {
+    const state = loadState();
+    const normalizedOrder = orderCode || "";
+    const drawingSet = new Set(drawingNos.map((drawingNo) => normalizeDrawingNo(drawingNo)));
+    const orderDrums = state.drums.filter((item) => item.production_order_no === normalizedOrder);
+    const matchingDrums = orderDrums.filter((item) => drawingSet.has(item.drawing_no));
+    if (!orderDrums.length) return null;
+    const printedCount = state.printJobs.filter((job) => orderDrums.some((drum) => drum.drum_id === job.drum_id)).length;
+    const scanCount = orderDrums.reduce((sum, drum) => sum + drum.scanRecords.length, 0);
+    return {
+      orderDrums,
+      matchingDrums,
+      printedCount,
+      scanCount,
+    };
+  }
+
   function mergeExistingDrum(existingDrum, incomingDrum) {
     const oldTasksByName = new Map(existingDrum.tasks.map((task) => [task.process_name, task]));
     incomingDrum.drum_id = existingDrum.drum_id;
@@ -317,24 +362,44 @@
   }
 
   function uploadRoute({ orderCode, itemName, fileName, mode = "replace" }) {
+    return registerDrums({
+      orderCode,
+      itemName,
+      drums: [{ drawingNo: orderCode === "410503" ? "410503.001.0" : `${orderCode || "1150053"}.001.0`, drumName: "锅筒" }],
+      mode,
+      sourceName: fileName,
+    });
+  }
+
+  function registerDrums({ orderCode, itemName, drums, mode = "safeMerge", sourceName = "手工登记" }) {
     const state = loadState();
     const normalizedOrder = orderCode || "1150053";
-    const drum = createDrum(normalizedOrder, itemName || "大连西太二期1x150t/h角管炉", fileName);
-    const existingIndex = state.drums.findIndex((item) => item.production_order_no === normalizedOrder);
-    if (existingIndex >= 0) {
-      state.drums[existingIndex] = mode === "safeMerge" ? mergeExistingDrum(state.drums[existingIndex], drum) : drum;
-    } else {
-      state.drums.unshift(drum);
-    }
+    const specs = Array.isArray(drums) && drums.length ? drums : [{ drawingNo: `${normalizedOrder}.001.0`, drumName: "锅筒" }];
+    const changedDrums = [];
+    specs.forEach((spec) => {
+      const drawingNo = normalizeDrawingNo(spec.drawingNo, `${normalizedOrder}.001.0`);
+      const drum = createDrum(normalizedOrder, itemName || "大连西太二期1x150t/h角管炉", sourceName, {
+        drawingNo,
+        drumName: spec.drumName || "锅筒",
+      });
+      const existingIndex = state.drums.findIndex((item) => item.production_order_no === normalizedOrder && item.drawing_no === drawingNo);
+      if (existingIndex >= 0) {
+        state.drums[existingIndex] = mode === "replace" ? drum : mergeExistingDrum(state.drums[existingIndex], drum);
+        changedDrums.push(state.drums[existingIndex]);
+      } else {
+        state.drums.unshift(drum);
+        changedDrums.push(drum);
+      }
+    });
     state.routeSource = {
       uploaded: true,
-      fileName: fileName || "工艺路线表.zip",
+      fileName: sourceName,
       importedAt: currentTime(),
       orderCode: normalizedOrder,
-      itemName: itemName || drum.project_name,
+      itemName: itemName || changedDrums[0].project_name,
     };
     saveState(state);
-    return state;
+    return { state, changedDrums };
   }
 
   function ensureSeedIfEmpty() {
@@ -343,7 +408,7 @@
       state.drums = createSeedDrums();
       state.routeSource = {
         uploaded: true,
-        fileName: "001.xls",
+        fileName: "手工登记",
         importedAt: currentTime(),
         orderCode: "410503",
         itemName: "鞍山华泰新石项目250t/h干熄焦余热炉",
@@ -376,7 +441,10 @@
 
   function findDrum(idOrCode) {
     const state = ensureSeedIfEmpty();
-    return state.drums.find((drum) => drum.drum_code === idOrCode || drum.drum_id === idOrCode || drum.production_order_no === idOrCode) || state.drums[0];
+    const exact = state.drums.find((drum) => drum.drum_code === idOrCode || drum.drum_id === idOrCode || drum.drawing_no === idOrCode);
+    if (exact) return exact;
+    const orderDrums = state.drums.filter((drum) => drum.production_order_no === idOrCode);
+    return orderDrums[0] || state.drums[0];
   }
 
   function printLabel(drumId) {
@@ -444,6 +512,8 @@
     loadState,
     saveState,
     uploadRoute,
+    registerDrums,
+    getRegistrationConflict,
     getUploadConflict,
     ensureSeedIfEmpty,
     getCurrentTask,

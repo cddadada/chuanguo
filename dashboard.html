@@ -87,6 +87,15 @@
       return state.drums.find((drum) => drum.drum_id === selectedDrumId) || state.drums[0];
     }
 
+    function drumsByOrder() {
+      const map = new Map();
+      state.drums.forEach((drum) => {
+        if (!map.has(drum.production_order_no)) map.set(drum.production_order_no, []);
+        map.get(drum.production_order_no).push(drum);
+      });
+      return [...map.values()].map((drums) => drums.sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN")));
+    }
+
     function statusClass(status) {
       if (status === "已完成") return "done";
       if (status === "待完成") return "current";
@@ -95,32 +104,36 @@
       return "";
     }
 
-    function orderGroup(drum) {
-      const rate = stateStore.getCompletionRate(drum);
-      const current = stateStore.getCurrentTask(drum);
-      if (rate === 100) return "已完成";
-      if (current.process_sequence === 1 && current.status !== "已完成") return "待启动";
+    function orderGroup(orderDrums) {
+      const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
+      const currents = orderDrums.map((drum) => stateStore.getCurrentTask(drum));
+      if (rates.every((rate) => rate === 100)) return "已完成";
+      if (currents.every((current) => current.process_sequence === 1 && current.status !== "已完成")) return "待启动";
       return "在制";
     }
 
     function renderOrderList() {
       const keyword = orderSearch.value.trim();
-      const drums = state.drums.filter((drum) => {
-        const text = `${drum.production_order_no}${drum.project_name}${drum.customer_name}`;
+      const orders = drumsByOrder().filter((orderDrums) => {
+        const text = orderDrums.map((drum) => `${drum.production_order_no}${drum.project_name}${drum.customer_name}${drum.drawing_no}`).join("");
         return !keyword || text.includes(keyword);
       });
       const groups = ["在制", "待启动", "已完成"];
       orderList.innerHTML = groups.map((group) => {
-        const groupDrums = drums.filter((drum) => orderGroup(drum) === group);
+        const groupOrders = orders.filter((orderDrums) => orderGroup(orderDrums) === group);
         return `
           <section class="order-group">
             <div class="order-group-title">${group}</div>
-            ${groupDrums.length ? groupDrums.map((drum) => `
-              <button class="order-item ${drum.drum_id === selectedDrumId ? "active" : ""}" data-drum-id="${drum.drum_id}">
-                <strong>${drum.production_order_no}</strong>
-                <span>${drum.project_name}</span>
+            ${groupOrders.length ? groupOrders.map((orderDrums) => {
+              const first = orderDrums[0];
+              const isActive = orderDrums.some((drum) => drum.drum_id === selectedDrumId);
+              return `
+              <button class="order-item ${isActive ? "active" : ""}" data-order-code="${first.production_order_no}">
+                <strong>${first.production_order_no}<em>${orderDrums.length} 个锅筒</em></strong>
+                <span>${first.project_name}</span>
+                <span>${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
               </button>
-            `).join("") : `<div class="order-empty">暂无</div>`}
+            `}).join("") : `<div class="order-empty">暂无</div>`}
           </section>
         `;
       }).join("");
@@ -128,10 +141,22 @@
 
     function renderBoardHead(drum) {
       const current = stateStore.getCurrentTask(drum);
+      const orderDrums = state.drums
+        .filter((item) => item.production_order_no === drum.production_order_no)
+        .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
       boardHead.innerHTML = `
         <div class="board-title">
           <strong>${drum.production_order_no} ${drum.drum_name}进度</strong>
           <span>${drum.project_name} / ${drum.drawing_no}</span>
+          ${orderDrums.length > 1 ? `
+            <div class="drum-switcher">
+              ${orderDrums.map((item) => `
+                <button class="${item.drum_id === drum.drum_id ? "active" : ""}" type="button" data-select-drum="${item.drum_id}">
+                  ${item.drawing_no}
+                </button>
+              `).join("")}
+            </div>
+          ` : ""}
         </div>
         <div class="board-stat"><span>当前工序</span><strong>${current.process_name}</strong></div>
         <div class="board-stat"><span>计划完工</span><strong>${drum.planned_finish_date}</strong></div>
@@ -266,9 +291,12 @@
 
     orderSearch.addEventListener("input", renderOrderList);
     orderList.addEventListener("click", (event) => {
-      const item = event.target.closest("[data-drum-id]");
+      const item = event.target.closest("[data-order-code]");
       if (!item) return;
-      selectedDrumId = item.dataset.drumId;
+      const orderDrums = state.drums
+        .filter((drum) => drum.production_order_no === item.dataset.orderCode)
+        .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
+      selectedDrumId = orderDrums[0] ? orderDrums[0].drum_id : selectedDrumId;
       planningOpen = false;
       recordsOpen = false;
       render();
@@ -278,6 +306,13 @@
       if (event.target.id === "toggleRecords") {
         recordsOpen = !recordsOpen;
         if (recordsOpen) planningOpen = false;
+        render();
+      }
+      const drumButton = event.target.closest("[data-select-drum]");
+      if (drumButton) {
+        selectedDrumId = drumButton.dataset.selectDrum;
+        planningOpen = false;
+        recordsOpen = false;
         render();
       }
       if (event.target.id === "togglePlan") {

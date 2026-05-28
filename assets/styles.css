@@ -152,6 +152,13 @@ button:disabled {
   font-weight: 700;
 }
 
+.upload-desc {
+  margin: -12px 0 22px;
+  color: #777;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
 .form-item {
   margin-bottom: 20px;
 }
@@ -184,6 +191,56 @@ button:disabled {
   margin-top: 8px;
   color: #999;
   font-size: 13px;
+}
+
+.drum-entry-panel {
+  margin-bottom: 20px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.drum-entry-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.drum-entry-head strong,
+.drum-entry-head span {
+  display: block;
+}
+
+.drum-entry-head span {
+  margin-top: 4px;
+  color: #777;
+  font-size: 12px;
+}
+
+.drum-rows {
+  display: grid;
+  gap: 10px;
+}
+
+.drum-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1.2fr) minmax(90px, 0.6fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.drum-row-index {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #eef5ff;
+  color: #1d5f9f;
+  font-weight: 700;
 }
 
 .submit-btn {
@@ -462,6 +519,14 @@ button:disabled {
   margin-bottom: 4px;
 }
 
+.order-item strong em {
+  float: right;
+  font-style: normal;
+  color: #777;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .order-item span {
   display: block;
   color: #666;
@@ -498,6 +563,28 @@ button:disabled {
 .board-stat span {
   color: #666;
   font-size: 12px;
+}
+
+.drum-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.drum-switcher button {
+  border: 1px solid #d9d9d9;
+  border-radius: 999px;
+  background: #fff;
+  color: #555;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.drum-switcher button.active {
+  border-color: #1677ff;
+  background: #e6f4ff;
+  color: #0958d9;
 }
 
 .board-stat strong {

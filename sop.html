@@ -473,20 +473,20 @@
           <div class="step-col"><span class="step-no">1</span></div>
           <div class="step-body">
             <div class="step-header">
-              <h3>上传工艺路线</h3>
+              <h3>登记锅筒图号</h3>
               <span class="role">操作人：<b>分厂技术员</b></span>
               <span class="role">操作方式：<b>在电脑端操作</b></span>
             </div>
             <div class="step-visual">
-              <img src="./assets/sop-screenshot-upload.png" alt="上传工艺路线页面">
+              <img src="./assets/sop-screenshot-upload.png" alt="锅筒图号登记页面">
               <a class="view-link" href="./upload.html" target="_blank">点击看原型 ›</a>
             </div>
             <div class="step-actions">
               <span class="label">标准动作</span>
               <ul>
-                <li>填写生产令号、项目名称。</li>
-                <li>上传工艺路线表或压缩包。</li>
-                <li>如果令号已存在，先确认是"保留已打卡记录更新"还是"重建数据"。</li>
+                <li>填写生产令号、项目名称和锅筒图号。</li>
+                <li>一个令号下有多个锅筒时，逐行增加锅筒图号。</li>
+                <li>如果令号或图号已存在，系统保留已打卡记录和二维码，只安全更新基础信息。</li>
               </ul>
             </div>
           </div>
@@ -507,8 +507,8 @@
             <div class="step-actions">
               <span class="label">标准动作</span>
               <ul>
-                <li>确认上传后的令号出现在核容锅筒工序打卡列表。</li>
-                <li>点击令号进入进度页面。</li>
+                <li>确认登记后的令号出现在核容锅筒工序打卡列表。</li>
+                <li>点击令号进入进度页面；如果同一令号有多个锅筒，需要切换确认每个锅筒图号。</li>
                 <li>必要时调整每道工序的计划开始和计划完成日期。</li>
               </ul>
             </div>
@@ -648,11 +648,11 @@
           </tr>
           <tr>
             <td>扫码页面工序不对</td>
-            <td>暂停打卡，确认上一工序是否漏打、工艺路线是否上传错误。</td>
+            <td>暂停打卡，确认上一工序是否漏打、锅筒图号或计划是否登记错误。</td>
             <td>分厂技术员</td>
           </tr>
           <tr>
-            <td>令号重复上传</td>
+            <td>令号/图号重复登记</td>
             <td>优先保留已打卡记录并更新计划；只有确认废弃旧数据时才重建。</td>
             <td>分厂技术员</td>
           </tr>
