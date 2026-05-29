@@ -54,8 +54,14 @@
     }
 
     function renderList(keyword = "") {
-      const state = stateStore.loadState().drums.length ? stateStore.loadState() : stateStore.ensureSeedIfEmpty();
+      const state = stateStore.loadState();
       const orders = drumsByOrder(state).filter((orderDrums) => !keyword || orderDrums[0].production_order_no.includes(keyword));
+      if (!orders.length) {
+        printList.innerHTML = `<div class="print-empty">暂无锅筒数据</div>`;
+        paperPreview.classList.remove("show");
+        paperPreview.innerHTML = "";
+        return;
+      }
       printList.innerHTML = orders.map((orderDrums) => {
         const first = orderDrums[0];
         const group = orderGroup(orderDrums);
@@ -67,6 +73,7 @@
               <strong>${first.production_order_no}</strong>
               <span>${first.project_name}</span>
               <span>${orderDrums.length} 个锅筒：${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
+              <span>${multiple ? `钢板数量：${orderDrums.map((drum, index) => `锅筒 ${index + 1} ${drum.plate_count || 1} 张`).join(" / ")}` : `钢板数量：${first.plate_count || 1} 张`}</span>
               <span><b class="status ${group === "已完成" ? "done" : "pending"}">${group}</b></span>
             </button>
             <button class="btn red" type="button" ${multiple ? `data-toggle-order="${first.production_order_no}"` : `data-print="${first.drum_id}"`}>
@@ -77,8 +84,11 @@
                 ${orderDrums.map((drum, index) => {
                   return `
                     <button type="button" data-print="${drum.drum_id}">
-                      <strong>锅筒 ${index + 1}</strong>
-                      <span>${drum.drawing_no}</span>
+                      <div class="print-drum-meta">
+                        <strong>锅筒 ${index + 1}</strong>
+                        <span>${drum.drawing_no}</span>
+                        <span>钢板数量：${drum.plate_count || 1} 张</span>
+                      </div>
                       <b>打印</b>
                     </button>
                   `;
@@ -113,6 +123,7 @@
       const button = event.target.closest("[data-print]");
       if (!button) return;
       const result = stateStore.printLabel(button.dataset.print);
+      if (!result.drum) return;
       renderPaper(result.drum, result.job);
     });
 

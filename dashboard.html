@@ -103,6 +103,19 @@
       return "";
     }
 
+    function taskVisualState(drum, task) {
+      const quantityProcessSet = new Set(["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"]);
+      if (quantityProcessSet.has(task.process_name)) {
+        const total = Number(drum.plate_count) || 1;
+        const done = taskFinishedQuantity(drum, task);
+        if (done >= total) return "done";
+        if (done > 0) return "running";
+        return "not-started";
+      }
+      if (task.status === "已完成") return "done";
+      return "not-started";
+    }
+
     function orderGroup(orderDrums) {
       const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
       const currents = orderDrums.map((drum) => stateStore.getCurrentTask(drum));
@@ -139,22 +152,60 @@
     }
 
     function renderBoardHead(orderDrums) {
+      if (!orderDrums.length) {
+        boardHead.innerHTML = `
+          <div class="board-title">
+            <strong>暂无令号进度</strong>
+            <span>请先在锅筒图号登记页登记令号和锅筒信息。</span>
+          </div>
+        `;
+        return;
+      }
       const first = orderDrums[0];
       boardHead.innerHTML = `
         <div class="board-title">
           <strong>${first.production_order_no} 进度</strong>
           <span>${first.project_name} / ${orderDrums.length} 个锅筒 / ${orderDrums.map((drum) => drum.drawing_no).join("、")}</span>
+          <div class="state-legend">
+            <span><i class="done"></i>已完成</span>
+            <span><i class="running"></i>进行中</span>
+            <span><i class="not-started"></i>未开始</span>
+          </div>
         </div>
       `;
     }
 
     function processGridHtml(drum) {
-      return drum.tasks.map((task) => `
-        <div class="process-pill ${statusClass(task.status)}">
-          <strong class="process-name">${task.process_sequence}. ${task.process_name}</strong>
-          <small class="process-date">${task.planned_finish_date}</small>
+      const quantityProcessSet = new Set(["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"]);
+      return drum.tasks.map((task, index) => {
+        const visualState = taskVisualState(drum, task);
+        return `
+          <div class="process-pill ${visualState}">
+            <strong class="process-name">${index + 1}. ${task.process_name}</strong>
+            <small class="process-date">${task.planned_finish_date}</small>
+            ${quantityProcessSet.has(task.process_name) ? quantityProgressHtml(drum, task) : ""}
+          </div>
+        `;
+      }).join("");
+    }
+
+    function taskFinishedQuantity(drum, task) {
+      const total = Number(drum.plate_count) || 1;
+      if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
+      return task.status === "已完成" ? total : 0;
+    }
+
+    function quantityProgressHtml(drum, task) {
+      const total = Number(drum.plate_count) || 1;
+      const done = taskFinishedQuantity(drum, task);
+      const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+      const progressState = percent === 0 ? "empty" : percent === 100 ? "full" : "partial";
+      return `
+        <div class="process-quantity ${progressState}">
+          <span>${done}/${total} 张</span>
+          <i><b style="width: ${percent}%"></b></i>
         </div>
-      `).join("");
+      `;
     }
 
     function fallbackRecords(drum) {
@@ -240,9 +291,9 @@
             </tr>
           </thead>
           <tbody>
-            ${drum.tasks.map((task) => `
+            ${drum.tasks.map((task, index) => `
               <tr>
-                <td>${task.process_sequence}</td>
+                <td>${index + 1}</td>
                 <td>${task.process_name}</td>
                 <td><span class="status ${task.status === "已完成" ? "done" : "pending"}">${task.status}</span></td>
                 <td><input class="field plan-date-input" data-task-id="${task.task_id}" data-field="planned_start_date" type="date" value="${task.planned_start_date}"></td>
@@ -256,6 +307,10 @@
     }
 
     function renderDrumBoards(orderDrums) {
+      if (!orderDrums.length) {
+        orderDrumBoards.innerHTML = `<div class="board-empty">暂无锅筒数据，请先完成锅筒图号登记。</div>`;
+        return;
+      }
       orderDrumBoards.innerHTML = orderDrums.map((drum, index) => {
         const current = stateStore.getCurrentTask(drum);
         const recordsOpen = recordsDrumId === drum.drum_id;
@@ -266,9 +321,10 @@
               <div class="drum-card-title">
                 <strong>锅筒 ${index + 1}</strong>
                 <span>${drum.drawing_no}</span>
+                <em>钢板数量：${drum.plate_count || 1} 张</em>
               </div>
               <div class="drum-card-stats">
-                <div class="board-stat"><span>当前工序</span><strong>${current.process_name}</strong></div>
+                <div class="board-stat"><span>已完成工序</span><strong>${drum.tasks.filter((task) => task.status === "已完成").length}/${drum.tasks.length}</strong></div>
                 <div class="board-stat"><span>计划完工</span><strong>${drum.planned_finish_date}</strong></div>
                 <div class="board-stat"><span>最近打卡</span><strong>${drum.last_checkin_time || "暂无"}</strong></div>
               </div>
@@ -287,7 +343,6 @@
 
     function render() {
       state = stateStore.loadState();
-      if (!state.drums.length) state = stateStore.ensureSeedIfEmpty();
       if (!state.drums.some((drum) => drum.production_order_no === selectedOrderCode)) {
         selectedOrderCode = state.drums[0] ? state.drums[0].production_order_no : "";
       }

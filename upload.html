@@ -9,23 +9,23 @@
   <body class="upload-page">
     <main class="upload-box">
       <div class="upload-title">核容分厂锅筒图号登记</div>
-      <p class="upload-desc">技术员只需要登记令号、项目名称和该令号下的锅筒图号。一个令号下有多个锅筒时，逐行增加图号。</p>
+      <p class="upload-desc">技术员登记令号、项目名称、锅筒图号、钢板数量，并按锅筒选择实际需要扫码打卡的工序。</p>
 
       <div class="form-item">
-        <label>令号（orderCode）<span style="color: red">*</span></label>
-        <input class="field" id="orderCode" type="text" value="1150053" autocomplete="off" />
+        <label>令号<span style="color: red">*</span></label>
+        <input class="field" id="orderCode" type="text" value="" autocomplete="off" />
       </div>
 
       <div class="form-item">
-        <label>项目名称（itemName）<span style="color: red">*</span></label>
-        <input class="field" id="itemName" type="text" value="大连西太二期1x150t/h角管炉" autocomplete="off" />
+        <label>项目名称<span style="color: red">*</span></label>
+        <input class="field" id="itemName" type="text" value="" autocomplete="off" />
       </div>
 
       <section class="drum-entry-panel">
         <div class="drum-entry-head">
           <div>
-            <strong>锅筒图号</strong>
-            <span>通常 1 个令号 1 个锅筒；如有多个锅筒，点击“增加锅筒”。</span>
+            <strong>锅筒信息</strong>
+            <span>每个锅筒独立维护图号、钢板数量和需要打卡的工序。</span>
           </div>
           <button class="btn" id="addDrumBtn" type="button">增加锅筒</button>
         </div>
@@ -44,6 +44,7 @@
       const drumRows = document.getElementById("drumRows");
       const submitBtn = document.getElementById("submitBtn");
       const msg = document.getElementById("msg");
+      const processNames = DrumDemo.PROCESS_NAMES;
       let rowId = 0;
 
       function defaultDrawingNo() {
@@ -53,6 +54,16 @@
         return `${orderCode}.${String(count).padStart(3, "0")}.0`;
       }
 
+      function processChoices(selected = processNames) {
+        const selectedSet = new Set(selected);
+        return processNames.map((processName) => `
+          <label class="process-choice">
+            <input type="checkbox" value="${processName}" ${selectedSet.has(processName) ? "checked" : ""} />
+            <span>${processName}</span>
+          </label>
+        `).join("");
+      }
+
       function addDrumRow(value = "", options = {}) {
         rowId += 1;
         const drawingValue = value || (options.useDefault === false ? "" : defaultDrawingNo());
@@ -60,10 +71,26 @@
         row.className = "drum-row";
         row.dataset.rowId = String(rowId);
         row.innerHTML = `
-          <span class="drum-row-index">${drumRows.children.length + 1}</span>
-          <span class="drum-name-fixed"></span>
-          <input class="field drum-drawing" type="text" value="${drawingValue}" placeholder="例如：1150053.001.0" autocomplete="off" />
-          <button class="btn" type="button" data-remove-row>移除</button>
+          <div class="drum-row-main">
+            <span class="drum-row-index">${drumRows.children.length + 1}</span>
+            <span class="drum-name-fixed"></span>
+            <input class="field drum-drawing" type="text" value="${drawingValue}" placeholder="例如：1150053.001.0" autocomplete="off" />
+            <label class="plate-count-label">
+              <span>钢板数量</span>
+              <input class="field plate-count" type="number" min="1" step="1" value="${options.plateCount || 1}" />
+            </label>
+            <button class="btn" type="button" data-remove-row>移除</button>
+          </div>
+          <div class="process-config">
+            <div class="process-config-head">
+              <span>该锅筒经历的工序</span>
+              <div>
+                <button class="text-btn" type="button" data-select-all>全选</button>
+                <button class="text-btn" type="button" data-clear-processes>清空</button>
+              </div>
+            </div>
+            <div class="process-choice-grid">${processChoices(options.processNames)}</div>
+          </div>
         `;
         drumRows.appendChild(row);
         syncRowState();
@@ -90,6 +117,8 @@
         const drums = [...drumRows.querySelectorAll(".drum-row")].map((row, index) => ({
           drawingNo: row.querySelector(".drum-drawing").value.trim(),
           drumName: `锅筒 ${index + 1}`,
+          plateCount: Number(row.querySelector(".plate-count").value),
+          processNames: [...row.querySelectorAll(".process-choice input:checked")].map((input) => input.value),
         }));
         return { orderCode, itemName, drums };
       }
@@ -98,6 +127,8 @@
         if (!payload.orderCode) return "请输入令号";
         if (!payload.itemName) return "请输入项目名称";
         if (!payload.drums.length || payload.drums.some((drum) => !drum.drawingNo)) return "请填写锅筒图号";
+        if (payload.drums.some((drum) => !Number.isInteger(drum.plateCount) || drum.plateCount <= 0)) return "请填写有效的钢板数量";
+        if (payload.drums.some((drum) => !drum.processNames.length)) return "每个锅筒至少选择一道工序";
         const drawingSet = new Set(payload.drums.map((drum) => drum.drawingNo));
         if (drawingSet.size !== payload.drums.length) return "同一个令号下的锅筒图号不能重复";
         return "";
@@ -118,6 +149,21 @@
         if (!button) return;
         button.closest(".drum-row").remove();
         syncRowState();
+      });
+
+      drumRows.addEventListener("click", (event) => {
+        const row = event.target.closest(".drum-row");
+        if (!row) return;
+        if (event.target.closest("[data-select-all]")) {
+          row.querySelectorAll(".process-choice input").forEach((input) => {
+            input.checked = true;
+          });
+        }
+        if (event.target.closest("[data-clear-processes]")) {
+          row.querySelectorAll(".process-choice input").forEach((input) => {
+            input.checked = false;
+          });
+        }
       });
 
       submitBtn.addEventListener("click", () => {
@@ -158,7 +204,7 @@
         msg.className = `msg show ${type}`;
       }
 
-      addDrumRow("1150053.001.0");
+      addDrumRow("", { useDefault: false });
     </script>
   </body>
 </html>

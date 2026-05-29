@@ -16,6 +16,7 @@
       <div id="summaryCard" class="checkin-card"></div>
       <div id="resultMsg" class="toast"></div>
       <div id="progressList" class="progress-list"></div>
+      <div id="actionSheet" class="checkin-sheet" hidden></div>
     </section>
   </main>
 
@@ -25,11 +26,13 @@
     const summaryCard = document.getElementById("summaryCard");
     const resultMsg = document.getElementById("resultMsg");
     const progressList = document.getElementById("progressList");
+    const actionSheet = document.getElementById("actionSheet");
     const params = new URLSearchParams(window.location.search);
     const rawId = params.get("id") || "";
     const targetId = decodeURIComponent(rawId).split("|")[0] || "";
     let toastTimer = 0;
     let isAdvancing = false;
+    let pendingTaskId = "";
 
     function currentDrum() {
       return stateStore.findDrum(targetId);
@@ -44,63 +47,177 @@
       }, 1800);
     }
 
-    function taskTimeLabel(task) {
-      if (task.actual_finish_time) return `完成时间：${task.actual_finish_time}`;
-      return `计划完成：${task.planned_finish_date}`;
+    function needsQuantity(task) {
+      return stateStore.QUANTITY_PROCESSES.has(task.process_name);
     }
 
-    function render(options = {}) {
+    function taskFinishedQuantity(drum, task) {
+      const total = Number(drum.plate_count) || 1;
+      if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
+      return task.status === "已完成" ? total : 0;
+    }
+
+    function taskRemainingQuantity(drum, task) {
+      const total = Number(drum.plate_count) || 1;
+      return Math.max(0, total - taskFinishedQuantity(drum, task));
+    }
+
+    function quantityProgressHtml(drum, task) {
+      const total = Number(drum.plate_count) || 1;
+      const done = taskFinishedQuantity(drum, task);
+      const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+      const progressState = percent === 0 ? "empty" : percent === 100 ? "full" : "partial";
+      return `
+        <div class="task-progress ${progressState}">
+          <span>${done}/${total} 张</span>
+          <i><b style="width: ${percent}%"></b></i>
+        </div>
+      `;
+    }
+
+    function compactDrawingNo(value) {
+      return String(value || "").replace(/\.0$/, "");
+    }
+
+    function taskVisualState(task) {
+      if (task.status === "已完成") return "done";
+      if (needsQuantity(task)) {
+        const total = Number(currentDrum()?.plate_count) || 1;
+        const done = Number(task.finish_quantity) || 0;
+        if (done > 0 && done < total) return "running";
+      }
+      return "not-started";
+    }
+
+    function closeActionSheet() {
+      pendingTaskId = "";
+      actionSheet.hidden = true;
+      actionSheet.innerHTML = "";
+    }
+
+    function openActionSheet(drum, task) {
+      pendingTaskId = task.task_id;
+      const requiresQuantity = needsQuantity(task);
+      const remainingQuantity = taskRemainingQuantity(drum, task);
+      actionSheet.hidden = false;
+      actionSheet.innerHTML = `
+        <div class="sheet-backdrop" data-close-sheet></div>
+        <div class="sheet-panel">
+          <strong>${task.process_name}</strong>
+          <p>${requiresQuantity ? `录入今日完成数量后确认打卡，最多还可完成 ${remainingQuantity} 张。` : "确认完成该工序打卡。"}</p>
+          ${requiresQuantity ? `
+            <label class="sheet-field">
+              <span>今日完成数量</span>
+              <input id="sheetQuantity" class="quantity-field" type="number" min="1" max="${remainingQuantity}" placeholder="最多 ${remainingQuantity} 张" inputmode="numeric">
+            </label>
+          ` : ""}
+          <div class="sheet-actions">
+            <button class="btn" type="button" data-close-sheet>取消</button>
+            <button class="btn primary" type="button" data-confirm-finish="${drum.drum_code}">确认打卡</button>
+          </div>
+        </div>
+      `;
+      actionSheet.querySelector("input")?.focus();
+    }
+
+    function render() {
       const drum = currentDrum();
-      const current = stateStore.getCurrentTask(drum);
-      const isFinished = drum.tasks.every((task) => task.status === "已完成");
+      if (!drum) {
+        summaryCard.innerHTML = `
+          <p class="order-code-line">暂无锅筒数据</p>
+          <p>请先完成锅筒图号登记，并打印二维码后再扫码打卡。</p>
+        `;
+        progressList.innerHTML = "";
+        return;
+      }
       const state = stateStore.loadState();
       const orderDrums = state.drums
         .filter((item) => item.production_order_no === drum.production_order_no)
         .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
-      const drumIndex = orderDrums.findIndex((item) => item.drum_id === drum.drum_id) + 1;
+      const completedCount = drum.tasks.filter((task) => task.status === "已完成").length;
       summaryCard.innerHTML = `
-        <p class="order-code-line">生产令号：<strong>${drum.production_order_no}</strong></p>
-        <p>项目：${drum.project_name}</p>
-        <p>锅筒：锅筒 ${drumIndex || 1} / 共 ${orderDrums.length || 1} 个</p>
-        <p>图号：${drum.drawing_no} / ${drum.drum_name}</p>
-        <p>计划完成：${current.planned_finish_date}</p>
+        <p class="order-code-line"><span>生产令号：</span><strong>${drum.production_order_no}</strong></p>
+        <p class="summary-project">项目：${drum.project_name}</p>
+        <p>锅筒数量：${orderDrums.length || 1} 个</p>
+        <p>当前锅筒图号：${compactDrawingNo(drum.drawing_no)}</p>
+        <p>钢板数量：${drum.plate_count || 1} 张</p>
+        <p class="completion-line">已完成工序：<strong>${completedCount}</strong>/${drum.tasks.length}</p>
       `;
-      progressList.innerHTML = drum.tasks.map((task) => {
-        const isCurrent = !isFinished && task.task_id === current.task_id;
+      progressList.innerHTML = drum.tasks.map((task, index) => {
+        const canFinish = task.status !== "已完成";
+        const visualState = taskVisualState(task);
         return `
-        <div id="task-${task.process_sequence}" class="progress-row ${isCurrent ? "current" : ""}" data-task-id="${task.task_id}">
-          <span>${task.process_sequence}</span>
+        <div id="task-${index + 1}" class="progress-row ${visualState} ${canFinish ? "actionable" : ""}" data-task-id="${task.task_id}">
+          <div class="task-seq">${index + 1}</div>
           <div class="process-main">
             <strong>${task.process_name}</strong>
-            <small>${taskTimeLabel(task)}</small>
+            ${needsQuantity(task) ? quantityProgressHtml(drum, task) : ""}
           </div>
-          <span class="status ${task.status === "已完成" ? "done" : "pending"}">${task.status}</span>
-          ${isCurrent ? `<button class="finish-btn inline" type="button" data-finish="${drum.drum_code}">完成该工序</button>` : ""}
         </div>
       `;
       }).join("");
-
-      if (options.scrollToCurrent !== false) {
-        window.setTimeout(() => {
-          const currentRow = progressList.querySelector(".progress-row.current");
-          if (currentRow) currentRow.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 80);
-      }
     }
 
     progressList.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-finish]");
-      if (!button || isAdvancing) return;
+      const row = event.target.closest(".progress-row");
+      if (!row || isAdvancing) return;
+      const drum = currentDrum();
+      const task = drum.tasks.find((item) => item.task_id === row.dataset.taskId);
+      if (!task) return;
+      if (task.status === "已完成") {
+        showToast(`${task.process_name} 已由 ${task.finish_user || "扫码工人"} 在 ${task.actual_finish_time || "--"} 完成`);
+        return;
+      }
+      openActionSheet(drum, task);
+    });
+
+    actionSheet.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close-sheet]")) {
+        closeActionSheet();
+        return;
+      }
+      const confirmButton = event.target.closest("[data-confirm-finish]");
+      if (!confirmButton || isAdvancing) return;
+      const drum = currentDrum();
+      if (!drum) {
+        showToast("未找到锅筒数据");
+        closeActionSheet();
+        return;
+      }
+      const task = drum.tasks.find((item) => item.task_id === pendingTaskId);
+      const quantityInput = actionSheet.querySelector("#sheetQuantity");
+      const finishQuantity = quantityInput ? Number(quantityInput.value) : 0;
+      if (task && needsQuantity(task) && (!Number.isInteger(finishQuantity) || finishQuantity <= 0)) {
+        showToast(`${task.process_name} 需要填写完成数量`);
+        quantityInput?.focus();
+        return;
+      }
+      if (task && needsQuantity(task) && finishQuantity > taskRemainingQuantity(drum, task)) {
+        showToast(`最多还能完成 ${taskRemainingQuantity(drum, task)} 张`);
+        quantityInput?.focus();
+        return;
+      }
       isAdvancing = true;
-      button.disabled = true;
-      button.textContent = "提交中...";
-      button.closest(".progress-row")?.classList.add("is-submitting");
-      const result = stateStore.completeCurrentTask(button.dataset.finish);
-      showToast(`${result.task.process_name} 已完成`);
+      confirmButton.disabled = true;
+      confirmButton.textContent = "提交中...";
+      const result = stateStore.completeTask(confirmButton.dataset.confirmFinish, pendingTaskId, { finishQuantity });
+      if (!result.task) {
+        showToast("未找到锅筒数据");
+        isAdvancing = false;
+        closeActionSheet();
+        render();
+        return;
+      }
+      if (needsQuantity(result.task) && result.task.status !== "已完成") {
+        showToast(`${result.task.process_name} 已记录 ${result.task.finish_quantity}/${result.drum.plate_count} 张`);
+      } else {
+        showToast(`${result.task.process_name} 已完成`);
+      }
+      closeActionSheet();
       window.setTimeout(() => {
         render();
         isAdvancing = false;
-      }, 900);
+      }, 180);
     });
 
     render();
