@@ -54,12 +54,15 @@
         return `${orderCode}.${String(count).padStart(3, "0")}.0`;
       }
 
-      function processChoices(selected = processNames) {
+      function processChoices(selected = processNames, quantities = {}) {
         const selectedSet = new Set(selected);
         return processNames.map((processName) => `
-          <label class="process-choice">
+          <label class="process-choice ${DrumDemo.QUANTITY_PROCESSES.has(processName) ? "quantity-enabled" : ""}">
             <input type="checkbox" value="${processName}" ${selectedSet.has(processName) ? "checked" : ""} />
             <span>${processName}</span>
+            ${DrumDemo.QUANTITY_PROCESSES.has(processName) ? `
+              <input class="process-quantity-input" type="number" min="1" step="1" value="${quantities[processName] || ""}" data-process-quantity="${processName}" aria-label="${processName}目标数量">
+            ` : ""}
           </label>
         `).join("");
       }
@@ -89,11 +92,23 @@
                 <button class="text-btn" type="button" data-clear-processes>清空</button>
               </div>
             </div>
-            <div class="process-choice-grid">${processChoices(options.processNames)}</div>
+            <p class="quantity-config-tip">备料、纵缝、纵缝探伤、环缝、环缝探伤可单独设置目标数量，默认等于钢板数量。</p>
+            <div class="process-choice-grid">${processChoices(options.processNames, options.processQuantities)}</div>
           </div>
         `;
         drumRows.appendChild(row);
+        syncQuantityInputs(row);
         syncRowState();
+      }
+
+      function syncQuantityInputs(row) {
+        const plateCount = Number(row.querySelector(".plate-count").value) || 1;
+        row.querySelectorAll(".process-choice.quantity-enabled").forEach((choice) => {
+          const checkbox = choice.querySelector("input[type='checkbox']");
+          const quantityInput = choice.querySelector(".process-quantity-input");
+          quantityInput.disabled = !checkbox.checked;
+          if (!quantityInput.value || Number(quantityInput.value) <= 0) quantityInput.value = plateCount;
+        });
       }
 
       function syncRowState() {
@@ -119,6 +134,7 @@
           drumName: `锅筒 ${index + 1}`,
           plateCount: Number(row.querySelector(".plate-count").value),
           processNames: [...row.querySelectorAll(".process-choice input:checked")].map((input) => input.value),
+          processQuantities: Object.fromEntries([...row.querySelectorAll(".process-quantity-input")].map((input) => [input.dataset.processQuantity, Number(input.value)])),
         }));
         return { orderCode, itemName, drums };
       }
@@ -129,6 +145,7 @@
         if (!payload.drums.length || payload.drums.some((drum) => !drum.drawingNo)) return "请填写锅筒图号";
         if (payload.drums.some((drum) => !Number.isInteger(drum.plateCount) || drum.plateCount <= 0)) return "请填写有效的钢板数量";
         if (payload.drums.some((drum) => !drum.processNames.length)) return "每个锅筒至少选择一道工序";
+        if (payload.drums.some((drum) => drum.processNames.some((processName) => DrumDemo.QUANTITY_PROCESSES.has(processName) && (!Number.isInteger(drum.processQuantities[processName]) || drum.processQuantities[processName] <= 0)))) return "请填写数量工序的有效目标数量";
         const drawingSet = new Set(payload.drums.map((drum) => drum.drawingNo));
         if (drawingSet.size !== payload.drums.length) return "同一个令号下的锅筒图号不能重复";
         return "";
@@ -140,8 +157,13 @@
       });
 
       drumRows.addEventListener("input", (event) => {
-        if (!event.target.classList.contains("drum-drawing")) return;
-        syncAddButtonState();
+        if (event.target.classList.contains("drum-drawing")) syncAddButtonState();
+        if (event.target.classList.contains("plate-count")) syncQuantityInputs(event.target.closest(".drum-row"));
+      });
+
+      drumRows.addEventListener("change", (event) => {
+        if (!event.target.closest(".process-choice")) return;
+        syncQuantityInputs(event.target.closest(".drum-row"));
       });
 
       drumRows.addEventListener("click", (event) => {
@@ -155,14 +177,16 @@
         const row = event.target.closest(".drum-row");
         if (!row) return;
         if (event.target.closest("[data-select-all]")) {
-          row.querySelectorAll(".process-choice input").forEach((input) => {
+          row.querySelectorAll(".process-choice input[type='checkbox']").forEach((input) => {
             input.checked = true;
           });
+          syncQuantityInputs(row);
         }
         if (event.target.closest("[data-clear-processes]")) {
-          row.querySelectorAll(".process-choice input").forEach((input) => {
+          row.querySelectorAll(".process-choice input[type='checkbox']").forEach((input) => {
             input.checked = false;
           });
+          syncQuantityInputs(row);
         }
       });
 

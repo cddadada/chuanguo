@@ -298,6 +298,12 @@ button:disabled {
   font-size: 13px;
 }
 
+.quantity-config-tip {
+  margin: -2px 0 0;
+  color: #7a8493;
+  font-size: 12px;
+}
+
 .text-btn {
   padding: 0 6px;
   border: 0;
@@ -324,12 +330,31 @@ button:disabled {
   font-size: 12px;
 }
 
+.process-choice.quantity-enabled {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 54px;
+}
+
 .process-choice input {
   margin: 0;
 }
 
 .process-choice span {
   line-height: 1.25;
+}
+
+.process-quantity-input {
+  width: 54px;
+  height: 24px;
+  border: 1px solid #d9dee8;
+  border-radius: 4px;
+  padding: 0 5px;
+  color: #303133;
+  font-size: 12px;
+}
+
+.process-quantity-input:disabled {
+  opacity: 0.45;
 }
 
 .submit-btn {
@@ -495,6 +520,11 @@ button:disabled {
   font-weight: 800;
 }
 
+.subnav-title.flow-logo {
+  font-size: 34px;
+  letter-spacing: -1px;
+}
+
 .weiwo-subnav nav {
   display: grid;
   padding: 8px 0;
@@ -632,6 +662,31 @@ button:disabled {
 .board {
   min-width: 0;
   padding: 16px 18px;
+}
+
+.flow-component-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #f3f4f6;
+}
+
+.flow-component-tabs button {
+  height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa3ad;
+  font-weight: 700;
+}
+
+.flow-component-tabs button.active {
+  background: #fff;
+  color: #333;
+  box-shadow: 0 1px 5px rgba(15, 23, 42, 0.1);
 }
 
 .board-head {
@@ -1373,6 +1428,12 @@ button:disabled {
 
 .sheet-actions .btn {
   width: 100%;
+}
+
+.sheet-actions .btn.danger {
+  border-color: #ffccc7;
+  background: #fff2f0;
+  color: #cf1322;
 }
 
 .task-progress b {

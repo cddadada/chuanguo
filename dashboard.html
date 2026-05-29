@@ -3,51 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>核容分厂厂长看板</title>
+  <title>Flow 生产工序跟踪</title>
   <link rel="stylesheet" href="./assets/styles.css">
 </head>
 <body class="weiwo-page">
   <aside class="weiwo-sidebar">
     <div class="weiwo-logo"><span>W</span>帷幄</div>
-    <nav class="weiwo-menu" aria-label="分厂管理菜单">
+    <nav class="weiwo-menu" aria-label="应用菜单">
       <div>当知当行</div>
       <div>CG Compass</div>
       <div>CG Notes</div>
       <div>CG Meeting</div>
-      <div>CG Flow</div>
+      <div class="active">CG Flow</div>
       <div>CG Knowledge</div>
       <div>QMS</div>
       <div>TPM</div>
       <div>HSE</div>
-      <div class="active">分厂管理</div>
+      <div>分厂管理</div>
       <div>WMS</div>
       <div>快捷入口</div>
     </nav>
   </aside>
 
   <aside class="weiwo-subnav">
-    <div class="subnav-title">分厂管理</div>
-    <nav aria-label="生产管理菜单">
-      <button type="button">生产实时</button>
-      <button type="button">智能监盘</button>
-      <button type="button" class="open">生产管理</button>
+    <div class="subnav-title flow-logo">Flow</div>
+    <nav aria-label="CG Flow 菜单">
+      <button type="button">关键指标</button>
+      <button type="button">月度生产看板</button>
+      <button type="button">分厂工序计划</button>
+      <button type="button" class="open">生产执行</button>
       <div class="subnav-children">
-        <button type="button">工序打卡</button>
-        <button type="button" class="active">核容锅筒工序打卡</button>
-        <button type="button">工艺管理</button>
+        <button type="button" class="active">生产工序跟踪</button>
+        <button type="button">生产监控</button>
+        <button type="button">龙盾机器人</button>
+        <button type="button">分厂驾驶舱</button>
+        <button type="button">班组DMS看板</button>
       </div>
-      <button type="button">设计&工艺&质量</button>
-      <button type="button">设备管理</button>
-      <button type="button">安全管理</button>
-      <button type="button">应急管理</button>
-      <button type="button">职业健康</button>
+      <button type="button">完工项目清单</button>
+      <button type="button">产出日报</button>
     </nav>
   </aside>
 
   <main class="weiwo-main">
     <header class="weiwo-header">
-      <div class="weiwo-title">分厂管理</div>
-      <span>生产管理 / 工序打卡 / 核容锅筒工序打卡</span>
+      <div class="weiwo-title">组件生产工序跟踪</div>
+      <span>CG Flow / 生产执行 / 生产工序跟踪 / 锅筒</span>
     </header>
 
     <section class="weiwo-content">
@@ -60,6 +60,12 @@
       </aside>
 
       <section class="board">
+        <div class="flow-component-tabs">
+          <button type="button">膜式壁</button>
+          <button type="button">蛇形管</button>
+          <button type="button">集箱</button>
+          <button type="button" class="active">锅筒</button>
+        </div>
         <div id="boardHead" class="board-head"></div>
         <div id="orderDrumBoards" class="drum-board-list"></div>
       </section>
@@ -106,7 +112,7 @@
     function taskVisualState(drum, task) {
       const quantityProcessSet = new Set(["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"]);
       if (quantityProcessSet.has(task.process_name)) {
-        const total = Number(drum.plate_count) || 1;
+        const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
         const done = taskFinishedQuantity(drum, task);
         if (done >= total) return "done";
         if (done > 0) return "running";
@@ -190,7 +196,7 @@
     }
 
     function taskFinishedQuantity(drum, task) {
-      const total = Number(drum.plate_count) || 1;
+      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
       if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
       return task.status === "已完成" ? total : 0;
     }
@@ -243,6 +249,7 @@
                 <th>工序</th>
                 <th>打卡人</th>
                 <th>打卡动作</th>
+                <th>累计数量</th>
                 <th>完成时间</th>
               </tr>
             </thead>
@@ -252,7 +259,8 @@
                   <td>${record.process_sequence || "-"}</td>
                   <td>${record.process_name}</td>
                   <td>${record.scan_user || "扫码工人"}</td>
-                  <td>${record.action_type === "finish" ? "完成打卡" : record.action_type}</td>
+                  <td>${record.action_type === "finish" ? "完成打卡" : record.action_type === "revoke" ? "撤回打卡" : record.action_type}</td>
+                  <td>${record.target_quantity ? `${record.finish_quantity || 0}/${record.target_quantity} 张` : "-"}</td>
                   <td>${record.scan_time}</td>
                 </tr>
               `).join("")}

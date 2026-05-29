@@ -98,6 +98,13 @@
     const savedProcesses = Array.isArray(drum.enabled_processes) ? drum.enabled_processes.filter((name) => PROCESS_NAMES.includes(name)) : [];
     const configuredProcesses = savedProcesses.length ? savedProcesses : PROCESS_NAMES;
     drum.enabled_processes = configuredProcesses;
+    const savedQuantities = drum.process_quantities && typeof drum.process_quantities === "object" ? drum.process_quantities : {};
+    drum.process_quantities = {};
+    configuredProcesses.forEach((processName) => {
+      if (!QUANTITY_PROCESSES.has(processName)) return;
+      const quantity = Number(savedQuantities[processName]);
+      drum.process_quantities[processName] = quantity > 0 ? quantity : drum.plate_count;
+    });
     const oldTasksByName = new Map();
     drum.tasks.forEach((task) => {
       const normalizedName = task.process_name === "卷制/纵缝" ? "纵缝" : task.process_name;
@@ -111,7 +118,8 @@
       if (existing) {
         const finishQuantity = Number(existing.finish_quantity) || 0;
         const isQuantityProcess = QUANTITY_PROCESSES.has(processName);
-        const normalizedStatus = isQuantityProcess && finishQuantity > 0 && finishQuantity < drum.plate_count
+        const targetQuantity = getProcessTargetQuantity(drum, processName);
+        const normalizedStatus = isQuantityProcess && finishQuantity > 0 && finishQuantity < targetQuantity
           ? "待完成"
           : existing.status;
         return {
@@ -119,8 +127,8 @@
           task_id: `${drum.drum_id}-T${String(sequence).padStart(2, "0")}`,
           process_name: processName,
           process_sequence: sequence,
-          status: isQuantityProcess && finishQuantity >= drum.plate_count ? "已完成" : normalizedStatus,
-          finish_quantity: finishQuantity,
+          status: isQuantityProcess && finishQuantity >= targetQuantity ? "已完成" : normalizedStatus,
+          finish_quantity: isQuantityProcess ? Math.min(finishQuantity, targetQuantity) : finishQuantity,
         };
       }
       const plannedStart = addDays("2026-05-20", sequence - 1);
@@ -153,9 +161,18 @@
             process_name: record.process_name === "卷制/纵缝" ? "纵缝" : record.process_name,
             process_sequence: PROCESS_NAMES.indexOf(record.process_name === "卷制/纵缝" ? "纵缝" : record.process_name) + 1 || record.process_sequence,
             finish_quantity: Number(record.finish_quantity) || 0,
+            target_quantity: Number(record.target_quantity) || 0,
           }))
       : [];
+    drum.last_checkin_time = drum.scanRecords[0]?.scan_time || drum.last_checkin_time;
     return drum;
+  }
+
+  function getProcessTargetQuantity(drum, processName) {
+    if (!QUANTITY_PROCESSES.has(processName)) return 0;
+    const configured = drum?.process_quantities && Number(drum.process_quantities[processName]);
+    if (configured > 0) return configured;
+    return Number(drum?.plate_count) > 0 ? Number(drum.plate_count) : 1;
   }
 
   function loadState() {
@@ -190,6 +207,12 @@
     const drumCode = buildDrumCode(orderCode, drawingNo);
     const selectedProcesses = Array.isArray(options.processNames) ? options.processNames.filter((name) => PROCESS_NAMES.includes(name)) : [];
     const enabledProcesses = selectedProcesses.length ? selectedProcesses : PROCESS_NAMES;
+    const processQuantities = {};
+    enabledProcesses.forEach((processName) => {
+      if (!QUANTITY_PROCESSES.has(processName)) return;
+      const quantity = options.processQuantities && Number(options.processQuantities[processName]);
+      processQuantities[processName] = quantity > 0 ? quantity : (Number(options.plateCount) > 0 ? Number(options.plateCount) : 1);
+    });
     const tasks = enabledProcesses.map((processName) => {
       const sequence = PROCESS_NAMES.indexOf(processName) + 1;
       const plannedStart = addDays("2026-05-20", sequence - 1);
@@ -220,6 +243,7 @@
       drum_name: options.drumName || "锅筒",
       plate_count: Number(options.plateCount) > 0 ? Number(options.plateCount) : 1,
       enabled_processes: enabledProcesses,
+      process_quantities: processQuantities,
       factory: "核容分厂",
       source_file: fileName || "手工登记",
       planned_finish_date: tasks[tasks.length - 1].planned_finish_date,
@@ -253,8 +277,9 @@
     });
     const quantityTasks = drum.tasks.filter((task) => ["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"].includes(task.process_name));
     quantityTasks.forEach((task, index) => {
-      if (index < completedCount) task.finish_quantity = drum.plate_count || 6;
-      if (index === completedCount && completedCount > 0) task.finish_quantity = Math.max(1, Math.floor((drum.plate_count || 6) / 2));
+      const targetQuantity = getProcessTargetQuantity(drum, task.process_name);
+      if (index < completedCount) task.finish_quantity = targetQuantity;
+      if (index === completedCount && completedCount > 0) task.finish_quantity = Math.max(1, Math.floor(targetQuantity / 2));
     });
     if (completedCount >= drum.tasks.length) {
       drum.tasks.forEach((task) => {
@@ -273,6 +298,8 @@
       action_type: "finish",
       scan_time: task.actual_finish_time,
       scan_user: task.finish_user,
+      finish_quantity: Number(task.finish_quantity) || 0,
+      target_quantity: getProcessTargetQuantity(drum, task.process_name),
     }));
     drum.notifyRecords = completedTasks
       .filter((task) => KEY_PROCESSES.has(task.process_name))
@@ -295,7 +322,7 @@
     task.delay_days = 0;
     task.stagnation_hours = 0;
     if (["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"].includes(task.process_name)) {
-      task.finish_quantity = drum.plate_count || 1;
+      task.finish_quantity = getProcessTargetQuantity(drum, task.process_name);
     }
     drum.last_checkin_time = task.actual_finish_time;
     drum.scanRecords.unshift({
@@ -307,6 +334,7 @@
       scan_time: task.actual_finish_time,
       scan_user: task.finish_user,
       finish_quantity: Number(task.finish_quantity) || 0,
+      target_quantity: getProcessTargetQuantity(drum, task.process_name),
     });
     return drum;
   }
@@ -445,6 +473,10 @@
     incomingDrum.scanRecords = existingDrum.scanRecords;
     incomingDrum.notifyRecords = existingDrum.notifyRecords;
     incomingDrum.last_checkin_time = existingDrum.last_checkin_time;
+    incomingDrum.process_quantities = {
+      ...(incomingDrum.process_quantities || {}),
+      ...(existingDrum.process_quantities || {}),
+    };
     incomingDrum.tasks = incomingDrum.tasks.map((newTask) => {
       const oldTask = oldTasksByName.get(newTask.process_name);
       if (!oldTask) return newTask;
@@ -492,6 +524,7 @@
         drumName: spec.drumName || "锅筒",
         plateCount: spec.plateCount,
         processNames: spec.processNames,
+        processQuantities: spec.processQuantities,
       });
       const existingIndex = state.drums.findIndex((item) => item.production_order_no === normalizedOrder && item.drawing_no === drawingNo);
       if (existingIndex >= 0) {
@@ -583,9 +616,10 @@
     if (!drum) return { state, drum: null, task: null, next: null };
     const task = drum.tasks.find((item) => item.task_id === taskId) || getCurrentTask(drum);
     const isQuantityProcess = QUANTITY_PROCESSES.has(task.process_name);
-    const totalQuantity = Number(drum.plate_count) || 1;
+    const totalQuantity = getProcessTargetQuantity(drum, task.process_name);
+    const inputQuantity = Number(options.finishQuantity);
     const nextQuantity = isQuantityProcess
-      ? Math.min(totalQuantity, (Number(task.finish_quantity) || 0) + (Number(options.finishQuantity) || 0))
+      ? Math.max(0, Math.min(totalQuantity, Number.isFinite(inputQuantity) ? inputQuantity : 0))
       : 0;
     task.status = !isQuantityProcess || nextQuantity >= totalQuantity ? "已完成" : "待完成";
     task.actual_finish_time = currentTime();
@@ -603,8 +637,9 @@
       scan_time: task.actual_finish_time,
       scan_user: task.finish_user,
       finish_quantity: task.finish_quantity,
+      target_quantity: totalQuantity,
     });
-    if (KEY_PROCESSES.has(task.process_name)) {
+    if (task.status === "已完成" && KEY_PROCESSES.has(task.process_name)) {
       drum.notifyRecords.unshift({
         notify_id: `N-${Date.now()}`,
         message: `${drum.customer_name} ${drum.project_name}：${drum.drum_name}${task.process_name}完成。`,
@@ -614,6 +649,36 @@
     const next = getCurrentTask(drum);
     saveState(state);
     return { state, drum, task, next };
+  }
+
+  function revokeTask(idOrCode, taskId) {
+    const state = ensureSeedIfEmpty();
+    const drum = state.drums.find((item) => item.drum_code === idOrCode || item.drum_id === idOrCode || item.production_order_no === idOrCode) || state.drums[0] || null;
+    if (!drum) return { state, drum: null, task: null };
+    const task = drum.tasks.find((item) => item.task_id === taskId);
+    if (!task) return { state, drum, task: null };
+    const revokeTime = currentTime();
+    const previousQuantity = Number(task.finish_quantity) || 0;
+    drum.scanRecords.unshift({
+      record_id: `R-${Date.now()}`,
+      drum_code: drum.drum_code,
+      process_sequence: task.process_sequence,
+      process_name: task.process_name,
+      action_type: "revoke",
+      scan_time: revokeTime,
+      scan_user: "扫码工人",
+      finish_quantity: previousQuantity,
+      target_quantity: getProcessTargetQuantity(drum, task.process_name),
+    });
+    task.status = "待完成";
+    task.actual_finish_time = "";
+    task.finish_user = "";
+    task.delay_days = 0;
+    task.stagnation_hours = 0;
+    task.finish_quantity = 0;
+    drum.last_checkin_time = revokeTime;
+    saveState(state);
+    return { state, drum, task };
   }
 
   function savePlanDates(drumId, rows) {
@@ -643,11 +708,13 @@
     ensureSeedIfEmpty,
     getCurrentTask,
     getCompletionRate,
+    getProcessTargetQuantity,
     getRisk,
     findDrum,
     printLabel,
     completeCurrentTask,
     completeTask,
+    revokeTask,
     savePlanDates,
     currentTime,
   };
