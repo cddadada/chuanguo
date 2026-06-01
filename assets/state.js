@@ -217,16 +217,15 @@
       const sequence = PROCESS_NAMES.indexOf(processName) + 1;
       const plannedStart = addDays("2026-05-20", sequence - 1);
       const plannedFinish = addDays("2026-05-21", sequence - 1);
-      const isDone = sequence < 4;
       return {
         task_id: `${drumId}-T${String(sequence).padStart(2, "0")}`,
         process_name: processName,
         process_sequence: sequence,
         planned_start_date: plannedStart,
         planned_finish_date: plannedFinish,
-        actual_finish_time: isDone ? `${plannedFinish} 17:30` : "",
-        finish_user: isDone ? "扫码工人" : "",
-        status: isDone ? "已完成" : sequence === 4 ? "待完成" : "待开始",
+        actual_finish_time: "",
+        finish_user: "",
+        status: "待完成",
         delay_days: 0,
         stagnation_hours: 0,
         finish_quantity: 0,
@@ -247,7 +246,7 @@
       factory: "核容分厂",
       source_file: fileName || "手工登记",
       planned_finish_date: tasks[tasks.length - 1].planned_finish_date,
-      last_checkin_time: tasks[2].actual_finish_time,
+      last_checkin_time: "",
       tasks,
       scanRecords: [],
       notifyRecords: [],

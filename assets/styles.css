@@ -1426,6 +1426,10 @@ button:disabled {
   gap: 8px;
 }
 
+.sheet-actions.three-actions {
+  grid-template-columns: 1fr;
+}
+
 .sheet-actions .btn {
   width: 100%;
 }

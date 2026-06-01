@@ -202,7 +202,7 @@
     }
 
     function quantityProgressHtml(drum, task) {
-      const total = Number(drum.plate_count) || 1;
+      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
       const done = taskFinishedQuantity(drum, task);
       const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
       const progressState = percent === 0 ? "empty" : percent === 100 ? "full" : "partial";
