@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>核容分厂汽包 工序打卡</title>
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body class="station-body">
+  <main class="station-shell">
+    <section id="loginView" class="station-login">
+      <div class="station-login-copy">
+        <span class="station-kicker">核容分厂 · 工位机入口</span>
+        <h1>核容分厂汽包 工序打卡</h1>
+        <p>使用企业微信扫码登录后，通过生产令号或锅筒图号快速定位锅筒并打卡。</p>
+      </div>
+      <div class="station-login-panel">
+        <div class="wechat-qr" aria-label="企业微信扫码登录示意"></div>
+        <strong>企业微信扫码登录</strong>
+        <span>当前为原型演示，可点击按钮模拟登录。</span>
+        <button id="mockLoginBtn" class="station-primary" type="button">模拟扫码登录</button>
+      </div>
+    </section>
+
+    <section id="workspaceView" class="station-workspace" hidden>
+      <header class="station-topbar">
+        <div>
+          <span class="station-kicker">车间公共打卡台</span>
+          <h1>核容分厂汽包 工序打卡</h1>
+        </div>
+        <div class="station-user">
+          <span>当前账号</span>
+          <strong id="currentUserName">--</strong>
+          <button id="logoutBtn" class="station-ghost" type="button">退出账号</button>
+        </div>
+      </header>
+
+      <div id="stationToast" class="station-toast"></div>
+
+      <section class="station-layout">
+        <aside class="station-results">
+          <div class="station-search-main">
+            <label for="stationSearchInput">生产令号 / 锅筒图号</label>
+            <div>
+              <input id="stationSearchInput" type="search" autocomplete="off" placeholder="输入后筛选左侧清单">
+              <button id="stationSearchBtn" class="station-primary" type="button">搜索</button>
+            </div>
+          </div>
+          <div id="stationStageTabs" class="station-stage-tabs"></div>
+          <div class="station-panel-title">
+            <strong>锅筒清单</strong>
+            <span id="resultCount">未搜索</span>
+          </div>
+          <div id="stationResults" class="station-result-list">
+            <div class="station-empty">正在加载锅筒清单。</div>
+          </div>
+        </aside>
+
+        <section class="station-checkin-panel">
+          <div id="stationDrumHead" class="station-drum-head">
+            <div>
+              <strong>等待选择锅筒</strong>
+              <span>搜索并选择锅筒后，在这里完成工序打卡。</span>
+            </div>
+          </div>
+          <div id="stationTaskGrid" class="station-task-grid"></div>
+        </section>
+      </section>
+
+      <div id="stationDialog" class="station-dialog" hidden></div>
+    </section>
+  </main>
+
+  <script src="./assets/state.js"></script>
+  <script>
+    const stateStore = window.DrumDemo;
+    const loginView = document.getElementById("loginView");
+    const workspaceView = document.getElementById("workspaceView");
+    const mockLoginBtn = document.getElementById("mockLoginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const currentUserName = document.getElementById("currentUserName");
+    const searchInput = document.getElementById("stationSearchInput");
+    const searchBtn = document.getElementById("stationSearchBtn");
+    const resultCount = document.getElementById("resultCount");
+    const resultsBox = document.getElementById("stationResults");
+    const drumHead = document.getElementById("stationDrumHead");
+    const taskGrid = document.getElementById("stationTaskGrid");
+    const dialog = document.getElementById("stationDialog");
+    const toast = document.getElementById("stationToast");
+    let selectedDrumCode = "";
+    let pendingTaskId = "";
+    let isSubmitting = false;
+    let toastTimer = 0;
+    let currentStage = "in-progress";
+    let lastSearchResults = [];
+    const currentUser = { name: "周建国" };
+
+    function login() {
+      currentUserName.textContent = currentUser.name;
+      loginView.hidden = true;
+      workspaceView.hidden = false;
+      runSearch();
+      searchInput.focus();
+    }
+
+    function logout() {
+      selectedDrumCode = "";
+      pendingTaskId = "";
+      closeDialog();
+      workspaceView.hidden = true;
+      loginView.hidden = false;
+      searchInput.value = "";
+      lastSearchResults = [];
+      currentStage = "in-progress";
+      renderStageTabs([]);
+      renderResults([]);
+      renderEmptyDrum();
+    }
+
+    function showToast(message) {
+      window.clearTimeout(toastTimer);
+      toast.textContent = message;
+      toast.classList.add("show");
+      toastTimer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function allDrums() {
+      return stateStore.ensureSeedIfEmpty().drums
+        .slice()
+        .sort((a, b) => `${a.production_order_no}${a.drawing_no}`.localeCompare(`${b.production_order_no}${b.drawing_no}`, "zh-Hans-CN"));
+    }
+
+    function searchDrums(keyword) {
+      const value = keyword.trim();
+      if (!value) return [];
+      return allDrums().filter((drum) => {
+        const text = `${drum.production_order_no}${drum.project_name}${drum.drawing_no}${drum.drum_name}`;
+        return text.includes(value);
+      });
+    }
+
+    function orderDrumCount(drum) {
+      return allDrums().filter((item) => item.production_order_no === drum.production_order_no).length;
+    }
+
+    function completedCount(drum) {
+      return drum.tasks.filter((task) => task.status === "已完成").length;
+    }
+
+    function drumStage(drum) {
+      const done = completedCount(drum);
+      if (done === 0) return "not-started";
+      if (done >= drum.tasks.length) return "done";
+      return "in-progress";
+    }
+
+    function stageLabel(stage) {
+      return {
+        "in-progress": "在制",
+        "not-started": "待启动",
+        done: "已完成",
+      }[stage] || "在制";
+    }
+
+    function orderGroups(results) {
+      const map = new Map();
+      results.forEach((drum) => {
+        const key = drum.production_order_no;
+        if (!map.has(key)) {
+          map.set(key, {
+            orderNo: drum.production_order_no,
+            projectName: drum.project_name,
+            drums: [],
+          });
+        }
+        map.get(key).drums.push(drum);
+      });
+      return Array.from(map.values()).map((group) => ({
+        ...group,
+        drums: group.drums.slice().sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN")),
+      }));
+    }
+
+    function orderMatchesStage(group, stage) {
+      return groupStage(group) === stage;
+    }
+
+    function groupStage(group) {
+      const stages = group.drums.map(drumStage);
+      if (stages.every((stage) => stage === "done")) return "done";
+      if (stages.every((stage) => stage === "not-started")) return "not-started";
+      return "in-progress";
+    }
+
+    function groupCompletedCount(group) {
+      return group.drums.reduce((sum, drum) => sum + completedCount(drum), 0);
+    }
+
+    function groupTaskCount(group) {
+      return group.drums.reduce((sum, drum) => sum + drum.tasks.length, 0);
+    }
+
+    function groupPlateCount(group) {
+      return group.drums.reduce((sum, drum) => sum + Number(drum.plate_count || 1), 0);
+    }
+
+    function stageCounts(results) {
+      return orderGroups(results).reduce((counts, group) => {
+        counts[groupStage(group)] += 1;
+        return counts;
+      }, { "in-progress": 0, "not-started": 0, done: 0 });
+    }
+
+    function pickDefaultStage(results) {
+      const counts = stageCounts(results);
+      return ["in-progress", "not-started", "done"].find((stage) => counts[stage] > 0) || "in-progress";
+    }
+
+    function pickDefaultDrum(results) {
+      return ["in-progress", "not-started", "done"]
+        .map((stage) => results.find((drum) => drumStage(drum) === stage))
+        .find(Boolean);
+    }
+
+    function renderStageTabs(results) {
+      const tabs = document.getElementById("stationStageTabs");
+      if (!results.length) {
+        tabs.innerHTML = "";
+        return;
+      }
+      const counts = stageCounts(results);
+      tabs.innerHTML = ["in-progress", "not-started", "done"].map((stage) => `
+        <button class="${currentStage === stage ? "active" : ""} ${stage}" type="button" data-stage-filter="${stage}">
+          <span>${stageLabel(stage)}</span>
+          <b>${counts[stage]}</b>
+        </button>
+      `).join("");
+    }
+
+    function needsQuantity(task) {
+      return stateStore.QUANTITY_PROCESSES.has(task.process_name);
+    }
+
+    function taskFinishedQuantity(drum, task) {
+      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
+      if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
+      return task.status === "已完成" ? total : 0;
+    }
+
+    function taskVisualState(drum, task) {
+      if (task.status === "已完成") return "done";
+      if (needsQuantity(task)) {
+        const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
+        const done = taskFinishedQuantity(drum, task);
+        if (done > 0 && done < total) return "running";
+      }
+      return "not-started";
+    }
+
+    function quantityHtml(drum, task) {
+      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
+      const done = taskFinishedQuantity(drum, task);
+      const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+      return `
+        <div class="station-quantity">
+          <span>${done}/${total} 张</span>
+          <i><b style="width:${percent}%"></b></i>
+        </div>
+      `;
+    }
+
+    function renderResults(results) {
+      const groups = orderGroups(results);
+      const visibleGroups = groups.filter((group) => orderMatchesStage(group, currentStage));
+      resultCount.textContent = groups.length ? `${stageLabel(currentStage)} ${visibleGroups.length}/${groups.length}` : (searchInput.value.trim() ? "无结果" : "暂无令号");
+      if (!results.length) {
+        resultsBox.innerHTML = `<div class="station-empty">未找到锅筒，请核对令号或锅筒图号。</div>`;
+        return;
+      }
+      if (!visibleGroups.length) {
+        resultsBox.innerHTML = `<div class="station-empty">当前没有${stageLabel(currentStage)}令号。</div>`;
+        return;
+      }
+      resultsBox.innerHTML = visibleGroups.map((group) => {
+        const preferredDrum = group.drums.find((drum) => drumStage(drum) === currentStage) || group.drums[0];
+        const isActive = group.drums.some((drum) => drum.drum_code === selectedDrumCode);
+        return `
+        <button class="station-result station-order-result ${isActive ? "active" : ""} ${groupStage(group)}" type="button" data-drum-code="${preferredDrum.drum_code}">
+          <strong>${group.orderNo}</strong>
+          <span>${group.projectName}</span>
+          <em>${group.drums.length} 个锅筒 · ${groupPlateCount(group)} 张钢板 · ${groupCompletedCount(group)}/${groupTaskCount(group)}</em>
+          <small>${stageLabel(groupStage(group))}</small>
+          <div class="station-order-drums">
+            ${group.drums.map((drum, index) => `
+              <i class="${drum.drum_code === selectedDrumCode ? "active" : ""}">
+                锅筒 ${index + 1} · ${drum.drawing_no} · ${drum.plate_count || 1} 张
+              </i>
+            `).join("")}
+          </div>
+        </button>
+      `;
+      }).join("");
+    }
+
+    function renderEmptyDrum() {
+      drumHead.innerHTML = `
+        <div>
+          <strong>等待选择锅筒</strong>
+          <span>搜索并选择锅筒后，在这里完成工序打卡。</span>
+        </div>
+      `;
+      taskGrid.innerHTML = "";
+    }
+
+    function renderSelectedDrum() {
+      const drum = stateStore.findDrum(selectedDrumCode);
+      if (!drum) {
+        renderEmptyDrum();
+        return;
+      }
+      const orderDrums = allDrums().filter((item) => item.production_order_no === drum.production_order_no);
+      drumHead.innerHTML = `
+        <div class="station-order-head">
+          <div>
+            <strong>${drum.production_order_no}</strong>
+            <span>${drum.project_name}</span>
+          </div>
+          <div class="station-drum-stats">
+            <b>${orderDrums.length} 个锅筒</b>
+            <b>${orderDrums.reduce((sum, item) => sum + Number(item.plate_count || 1), 0)} 张钢板</b>
+            <b>当前锅筒：已完成 ${completedCount(drum)}/${drum.tasks.length}</b>
+          </div>
+        </div>
+        <div class="station-drum-switch">
+          ${orderDrums.map((item, index) => `
+            <button class="${item.drum_code === drum.drum_code ? "active" : ""}" type="button" data-drum-code="${item.drum_code}">
+              ${item.drum_code === drum.drum_code ? `<em>当前打卡</em>` : ""}
+              <i>锅筒 ${index + 1}</i>
+              <strong>${item.drawing_no}</strong>
+              <span>${item.plate_count || 1} 张钢板 · ${completedCount(item)}/${item.tasks.length}</span>
+            </button>
+          `).join("")}
+        </div>
+      `;
+      taskGrid.innerHTML = drum.tasks.map((task, index) => {
+        const visualState = taskVisualState(drum, task);
+        return `
+          <button class="station-task ${visualState}" type="button" data-task-id="${task.task_id}">
+            <span>${index + 1}</span>
+            <strong>${task.process_name}</strong>
+            ${needsQuantity(task) ? quantityHtml(drum, task) : ""}
+          </button>
+        `;
+      }).join("");
+    }
+
+    function runSearch() {
+      const keyword = searchInput.value.trim();
+      const results = keyword ? searchDrums(keyword) : allDrums();
+      lastSearchResults = results;
+      currentStage = pickDefaultStage(results);
+      selectedDrumCode = results.find((drum) => drumStage(drum) === currentStage)?.drum_code || pickDefaultDrum(results)?.drum_code || "";
+      renderStageTabs(results);
+      renderResults(results);
+      if (selectedDrumCode) renderSelectedDrum();
+      else renderEmptyDrum();
+    }
+
+    function closeDialog() {
+      pendingTaskId = "";
+      dialog.hidden = true;
+      dialog.innerHTML = "";
+    }
+
+    function openTaskDialog(drum, task) {
+      pendingTaskId = task.task_id;
+      const requiresQuantity = needsQuantity(task);
+      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
+      const current = taskFinishedQuantity(drum, task);
+      const hasQuantityProgress = requiresQuantity && current > 0;
+      dialog.hidden = false;
+      dialog.innerHTML = `
+        <div class="station-dialog-backdrop" data-close-dialog></div>
+        <div class="station-dialog-panel">
+          <strong>${task.process_name}</strong>
+          <p>${requiresQuantity ? `录入当前累计已完成数量，不能小于当前 ${current} 张，最大不能超过 ${total} 张。` : "确认完成该工序打卡。"}</p>
+          ${requiresQuantity ? `
+            <label class="station-dialog-field">
+              <span>当前累计已完成数量</span>
+              <div class="station-quantity-stepper">
+                <button type="button" data-quantity-step="-1">-</button>
+                <input id="stationQuantity" type="number" min="${current}" max="${total}" value="${current || ""}" placeholder="最多 ${total} 张" inputmode="numeric">
+                <button type="button" data-quantity-step="1">+</button>
+              </div>
+            </label>
+          ` : ""}
+          <div class="station-dialog-actions ${hasQuantityProgress ? "three-actions" : ""}">
+            <button type="button" class="station-ghost" data-close-dialog>取消</button>
+            ${hasQuantityProgress ? `<button type="button" class="station-danger" data-revoke-task="${drum.drum_code}">撤回上次数量</button>` : ""}
+            <button type="button" class="station-primary" data-confirm-task="${drum.drum_code}">确认打卡</button>
+          </div>
+        </div>
+      `;
+      dialog.querySelector("input")?.focus();
+    }
+
+    function openCompletedDialog(drum, task) {
+      pendingTaskId = task.task_id;
+      dialog.hidden = false;
+      dialog.innerHTML = `
+        <div class="station-dialog-backdrop" data-close-dialog></div>
+        <div class="station-dialog-panel">
+          <strong>${task.process_name}</strong>
+          <p>该工序已由 ${task.finish_user || "扫码工人"} 在 ${task.actual_finish_time || "--"} 完成。</p>
+          ${needsQuantity(task) ? `<p>当前记录：${taskFinishedQuantity(drum, task)}/${stateStore.getProcessTargetQuantity(drum, task.process_name)} 张</p>` : ""}
+          <div class="station-dialog-actions">
+            <button type="button" class="station-ghost" data-close-dialog>关闭</button>
+            <button type="button" class="station-danger" data-revoke-task="${drum.drum_code}">撤回打卡</button>
+          </div>
+        </div>
+      `;
+    }
+
+    searchBtn.addEventListener("click", runSearch);
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") runSearch();
+    });
+    searchInput.addEventListener("input", () => {
+      if (!searchInput.value.trim()) runSearch();
+    });
+    mockLoginBtn.addEventListener("click", login);
+    logoutBtn.addEventListener("click", logout);
+
+    document.addEventListener("click", (event) => {
+      const result = event.target.closest("[data-drum-code]");
+      if (result) {
+        selectedDrumCode = result.dataset.drumCode;
+        renderResults(lastSearchResults);
+        renderSelectedDrum();
+      }
+      const stage = event.target.closest("[data-stage-filter]");
+      if (stage) {
+        currentStage = stage.dataset.stageFilter;
+        selectedDrumCode = lastSearchResults.find((drum) => drumStage(drum) === currentStage)?.drum_code || "";
+        renderStageTabs(lastSearchResults);
+        renderResults(lastSearchResults);
+        if (selectedDrumCode) renderSelectedDrum();
+        else renderEmptyDrum();
+      }
+      const taskButton = event.target.closest(".station-task");
+      if (taskButton && selectedDrumCode && !isSubmitting) {
+        const drum = stateStore.findDrum(selectedDrumCode);
+        const task = drum.tasks.find((item) => item.task_id === taskButton.dataset.taskId);
+        if (!task) return;
+        if (task.status === "已完成") openCompletedDialog(drum, task);
+        else openTaskDialog(drum, task);
+      }
+    });
+
+    dialog.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close-dialog]")) {
+        closeDialog();
+        return;
+      }
+      const stepButton = event.target.closest("[data-quantity-step]");
+      if (stepButton) {
+        const input = dialog.querySelector("#stationQuantity");
+        if (!input) return;
+        const min = Number(input.min) || 0;
+        const max = Number(input.max) || min;
+        const fallback = input.value === "" ? min : Number(input.value);
+        const next = Math.max(min, Math.min(max, fallback + Number(stepButton.dataset.quantityStep)));
+        input.value = next;
+        return;
+      }
+      const confirm = event.target.closest("[data-confirm-task]");
+      const revoke = event.target.closest("[data-revoke-task]");
+      if ((!confirm && !revoke) || isSubmitting) return;
+      const drum = stateStore.findDrum((confirm || revoke).dataset.confirmTask || (confirm || revoke).dataset.revokeTask);
+      const task = drum.tasks.find((item) => item.task_id === pendingTaskId);
+      if (!task) return;
+      isSubmitting = true;
+      if (confirm) {
+        const quantityInput = dialog.querySelector("#stationQuantity");
+        const finishQuantity = quantityInput ? Number(quantityInput.value) : 0;
+        const total = needsQuantity(task) ? stateStore.getProcessTargetQuantity(drum, task.process_name) : 0;
+        const current = taskFinishedQuantity(drum, task);
+        if (needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity < 0)) {
+          showToast(`${task.process_name} 需要填写累计完成数量`);
+          quantityInput.focus();
+          isSubmitting = false;
+          return;
+        }
+        if (needsQuantity(task) && finishQuantity > total) {
+          showToast(`累计数量不能超过 ${total} 张`);
+          quantityInput.focus();
+          isSubmitting = false;
+          return;
+        }
+        if (needsQuantity(task) && finishQuantity < current) {
+          showToast("累计数量不能小于当前已记录数量，如需纠错请先撤回");
+          quantityInput.focus();
+          isSubmitting = false;
+          return;
+        }
+        stateStore.completeTask(drum.drum_code, task.task_id, { finishQuantity, finishUser: currentUser.name });
+        closeDialog();
+        window.setTimeout(() => {
+          renderSelectedDrum();
+          showToast(needsQuantity(task) && finishQuantity < total ? `${task.process_name} 已记录 ${finishQuantity}/${total} 张` : `${task.process_name} 已完成`);
+          isSubmitting = false;
+        }, 180);
+      }
+      if (revoke) {
+        stateStore.revokeTask(drum.drum_code, task.task_id, { revokeUser: currentUser.name });
+        closeDialog();
+        window.setTimeout(() => {
+          renderSelectedDrum();
+          showToast(`${task.process_name} 已撤回`);
+          isSubmitting = false;
+        }, 180);
+      }
+    });
+  </script>
+</body>
+</html>

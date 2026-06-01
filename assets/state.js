@@ -622,7 +622,7 @@
       : 0;
     task.status = !isQuantityProcess || nextQuantity >= totalQuantity ? "已完成" : "待完成";
     task.actual_finish_time = currentTime();
-    task.finish_user = "扫码工人";
+    task.finish_user = options.finishUser || "扫码工人";
     task.delay_days = 0;
     task.stagnation_hours = 0;
     task.finish_quantity = nextQuantity;
@@ -650,7 +650,7 @@
     return { state, drum, task, next };
   }
 
-  function revokeTask(idOrCode, taskId) {
+  function revokeTask(idOrCode, taskId, options = {}) {
     const state = ensureSeedIfEmpty();
     const drum = state.drums.find((item) => item.drum_code === idOrCode || item.drum_id === idOrCode || item.production_order_no === idOrCode) || state.drums[0] || null;
     if (!drum) return { state, drum: null, task: null };
@@ -665,7 +665,7 @@
       process_name: task.process_name,
       action_type: "revoke",
       scan_time: revokeTime,
-      scan_user: "扫码工人",
+      scan_user: options.revokeUser || "扫码工人",
       finish_quantity: previousQuantity,
       target_quantity: getProcessTargetQuantity(drum, task.process_name),
     });
