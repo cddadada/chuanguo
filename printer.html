@@ -74,9 +74,9 @@
               <span>${multiple ? `钢板数量：${orderDrums.map((drum, index) => `锅筒 ${index + 1} ${drum.plate_count || 1} 张`).join(" / ")}` : `钢板数量：${first.plate_count || 1} 张`}</span>
               <span><b class="status ${group === "已完成" ? "done" : "pending"}">${group}</b></span>
             </button>
-            <button class="btn red" type="button" ${multiple ? "disabled" : `data-print="${first.drum_id}"`}>
-              ${multiple ? "已展开" : "打印"}
-            </button>
+            ${multiple ? "" : `
+              <button class="btn red" type="button" data-print="${first.drum_id}">打印</button>
+            `}
             ${multiple ? `
               <div class="print-drum-options">
                 ${orderDrums.map((drum, index) => {
