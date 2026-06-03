@@ -95,22 +95,20 @@
       const requiresQuantity = needsQuantity(task);
       const targetQuantity = stateStore.getProcessTargetQuantity(drum, task.process_name);
       const currentQuantity = taskFinishedQuantity(drum, task);
-      const hasQuantityProgress = requiresQuantity && currentQuantity > 0;
       actionSheet.hidden = false;
       actionSheet.innerHTML = `
         <div class="sheet-backdrop" data-close-sheet></div>
         <div class="sheet-panel">
           <strong>${task.process_name}</strong>
-          <p>${requiresQuantity ? `录入当前累计已完成数量，不能小于当前 ${currentQuantity} 张，最大不能超过 ${targetQuantity} 张。` : "确认完成该工序打卡。"}</p>
+          <p>${requiresQuantity ? `录入新的当前累计已完成数量，最大不能超过 ${targetQuantity} 张。` : "确认完成该工序打卡。"}</p>
           ${requiresQuantity ? `
             <label class="sheet-field">
               <span>当前累计已完成数量</span>
-              <input id="sheetQuantity" class="quantity-field" type="number" min="${currentQuantity}" max="${targetQuantity}" value="${currentQuantity || ""}" placeholder="最多 ${targetQuantity} 张" inputmode="numeric">
+              <input id="sheetQuantity" class="quantity-field" type="number" min="0" max="${targetQuantity}" value="${currentQuantity || ""}" placeholder="最多 ${targetQuantity} 张" inputmode="numeric">
             </label>
           ` : ""}
-          <div class="sheet-actions ${hasQuantityProgress ? "three-actions" : ""}">
+          <div class="sheet-actions">
             <button class="btn" type="button" data-close-sheet>取消</button>
-            ${hasQuantityProgress ? `<button class="btn danger" type="button" data-revoke-task="${drum.drum_code}">撤回上次数量</button>` : ""}
             <button class="btn primary" type="button" data-confirm-finish="${drum.drum_code}">确认打卡</button>
           </div>
         </div>
@@ -162,11 +160,10 @@
         <p class="completion-line">已完成工序：<strong>${completedCount}</strong>/${drum.tasks.length}</p>
       `;
       progressList.innerHTML = drum.tasks.map((task, index) => {
-        const canFinish = task.status !== "已完成";
+        const canFinish = task.status !== "已完成" || needsQuantity(task);
         const visualState = taskVisualState(task);
         return `
         <div id="task-${index + 1}" class="progress-row ${visualState} ${canFinish ? "actionable" : ""}" data-task-id="${task.task_id}">
-          <div class="task-seq">${index + 1}</div>
           <div class="process-main">
             <strong>${task.process_name}</strong>
             ${needsQuantity(task) ? quantityProgressHtml(drum, task) : ""}
@@ -182,7 +179,7 @@
       const drum = currentDrum();
       const task = drum.tasks.find((item) => item.task_id === row.dataset.taskId);
       if (!task) return;
-      if (task.status === "已完成") {
+      if (task.status === "已完成" && !needsQuantity(task)) {
         openCompletedSheet(drum, task);
         return;
       }
@@ -213,11 +210,6 @@
       }
       if (task && needsQuantity(task) && finishQuantity > targetQuantity) {
         showToast(`累计数量不能超过 ${targetQuantity} 张`);
-        quantityInput?.focus();
-        return;
-      }
-      if (task && needsQuantity(task) && finishQuantity < taskFinishedQuantity(drum, task)) {
-        showToast("累计数量不能小于当前已记录数量，如需纠错请先撤回");
         quantityInput?.focus();
         return;
       }

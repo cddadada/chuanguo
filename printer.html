@@ -25,7 +25,6 @@
     const printList = document.getElementById("printList");
     const paperPreview = document.getElementById("paperPreview");
     const printSearch = document.getElementById("printSearch");
-    let expandedOrderCode = "";
 
     function orderGroup(orderDrums) {
       const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
@@ -66,20 +65,19 @@
         const first = orderDrums[0];
         const group = orderGroup(orderDrums);
         const multiple = orderDrums.length > 1;
-        const isExpanded = expandedOrderCode === first.production_order_no;
         return `
           <article class="print-card order-print-card">
-            <button class="print-order-main" type="button" ${multiple ? `data-toggle-order="${first.production_order_no}"` : `data-print="${first.drum_id}"`}>
+            <button class="print-order-main" type="button" ${multiple ? "" : `data-print="${first.drum_id}"`}>
               <strong>${first.production_order_no}</strong>
               <span>${first.project_name}</span>
               <span>${orderDrums.length} 个锅筒：${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
               <span>${multiple ? `钢板数量：${orderDrums.map((drum, index) => `锅筒 ${index + 1} ${drum.plate_count || 1} 张`).join(" / ")}` : `钢板数量：${first.plate_count || 1} 张`}</span>
               <span><b class="status ${group === "已完成" ? "done" : "pending"}">${group}</b></span>
             </button>
-            <button class="btn red" type="button" ${multiple ? `data-toggle-order="${first.production_order_no}"` : `data-print="${first.drum_id}"`}>
-              打印
+            <button class="btn red" type="button" ${multiple ? "disabled" : `data-print="${first.drum_id}"`}>
+              ${multiple ? "已展开" : "打印"}
             </button>
-            ${multiple && isExpanded ? `
+            ${multiple ? `
               <div class="print-drum-options">
                 ${orderDrums.map((drum, index) => {
                   return `
@@ -114,12 +112,6 @@
     }
 
     printList.addEventListener("click", (event) => {
-      const orderButton = event.target.closest("[data-toggle-order]");
-      if (orderButton) {
-        expandedOrderCode = expandedOrderCode === orderButton.dataset.toggleOrder ? "" : orderButton.dataset.toggleOrder;
-        renderList(printSearch.value.trim());
-        return;
-      }
       const button = event.target.closest("[data-print]");
       if (!button) return;
       const result = stateStore.printLabel(button.dataset.print);
@@ -129,7 +121,6 @@
 
     printSearch.addEventListener("input", () => {
       const keyword = printSearch.value.trim();
-      expandedOrderCode = "";
       renderList(keyword);
     });
 

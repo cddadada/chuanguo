@@ -55,7 +55,8 @@
         <div class="rail-search">
           <input id="orderSearch" class="field" type="search" placeholder="搜索令号">
         </div>
-        <div class="rail-title">令号状态</div>
+        <div id="orderFilterTabs" class="rail-filter-tabs"></div>
+        <div class="rail-title">令号列表</div>
         <div id="orderList" class="order-list"></div>
       </aside>
 
@@ -79,8 +80,11 @@
     let selectedOrderCode = state.drums[0] ? state.drums[0].production_order_no : "";
     let planningDrumId = "";
     let recordsDrumId = "";
+    let currentOrderFilter = "在制";
+    const currentViewer = { name: "周建国", role: "厂长", canViewRecords: true, canAdjustPlan: true };
 
     const orderSearch = document.getElementById("orderSearch");
+    const orderFilterTabs = document.getElementById("orderFilterTabs");
     const orderList = document.getElementById("orderList");
     const boardHead = document.getElementById("boardHead");
     const orderDrumBoards = document.getElementById("orderDrumBoards");
@@ -136,25 +140,27 @@
         const text = orderDrums.map((drum) => `${drum.production_order_no}${drum.project_name}${drum.customer_name}${drum.drawing_no}`).join("");
         return !keyword || text.includes(keyword);
       });
-      const groups = ["在制", "待启动", "已完成"];
-      orderList.innerHTML = groups.map((group) => {
-        const groupOrders = orders.filter((orderDrums) => orderGroup(orderDrums) === group);
+      const filters = ["在制", "待启动", "已完成"];
+      const counts = Object.fromEntries(filters.map((filter) => [filter, orders.filter((orderDrums) => orderGroup(orderDrums) === filter).length]));
+      if (!filters.includes(currentOrderFilter)) currentOrderFilter = filters.find((filter) => counts[filter] > 0) || "在制";
+      orderFilterTabs.innerHTML = filters.map((filter) => `
+        <button class="${currentOrderFilter === filter ? "active" : ""}" type="button" data-order-filter="${filter}">
+          <span>${filter}</span>
+          <b>${counts[filter]}</b>
+        </button>
+      `).join("");
+      const visibleOrders = orders.filter((orderDrums) => orderGroup(orderDrums) === currentOrderFilter);
+      orderList.innerHTML = visibleOrders.length ? visibleOrders.map((orderDrums) => {
+        const first = orderDrums[0];
+        const isActive = first.production_order_no === selectedOrderCode;
         return `
-          <section class="order-group">
-            <div class="order-group-title">${group}</div>
-            ${groupOrders.length ? groupOrders.map((orderDrums) => {
-              const first = orderDrums[0];
-              const isActive = first.production_order_no === selectedOrderCode;
-              return `
-              <button class="order-item ${isActive ? "active" : ""}" data-order-code="${first.production_order_no}">
-                <strong>${first.production_order_no}<em>${orderDrums.length} 个锅筒</em></strong>
-                <span>${first.project_name}</span>
-                <span>${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
-              </button>
-            `}).join("") : `<div class="order-empty">暂无</div>`}
-          </section>
+          <button class="order-item ${isActive ? "active" : ""}" data-order-code="${first.production_order_no}">
+            <strong>${first.production_order_no}<em>${orderDrums.length} 个锅筒</em></strong>
+            <span>${first.project_name}</span>
+            <span>${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
+          </button>
         `;
-      }).join("");
+      }).join("") : `<div class="order-empty">当前没有${currentOrderFilter}令号</div>`;
     }
 
     function renderBoardHead(orderDrums) {
@@ -172,6 +178,7 @@
         <div class="board-title">
           <strong>${first.production_order_no} 进度</strong>
           <span>${first.project_name} / ${orderDrums.length} 个锅筒 / ${orderDrums.map((drum) => drum.drawing_no).join("、")}</span>
+          <em class="permission-note">当前账号：${currentViewer.name}（${currentViewer.role}）</em>
           <div class="state-legend">
             <span><i class="done"></i>已完成</span>
             <span><i class="running"></i>进行中</span>
@@ -183,12 +190,12 @@
 
     function processGridHtml(drum) {
       const quantityProcessSet = new Set(["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"]);
-      return drum.tasks.map((task, index) => {
+      return drum.tasks.map((task) => {
         const visualState = taskVisualState(drum, task);
         return `
           <div class="process-pill ${visualState}">
-            <strong class="process-name">${index + 1}. ${task.process_name}</strong>
-            <small class="process-date">${task.planned_finish_date}</small>
+            <strong class="process-name">${task.process_name}</strong>
+            <small class="process-date">计划完成 ${task.planned_finish_date}</small>
             ${quantityProcessSet.has(task.process_name) ? quantityProgressHtml(drum, task) : ""}
           </div>
         `;
@@ -245,7 +252,6 @@
           <table class="record-table">
             <thead>
               <tr>
-                <th>序号</th>
                 <th>工序</th>
                 <th>打卡人</th>
                 <th>打卡动作</th>
@@ -256,7 +262,6 @@
             <tbody>
               ${records.map((record) => `
                 <tr>
-                  <td>${record.process_sequence || "-"}</td>
                   <td>${record.process_name}</td>
                   <td>${record.scan_user || "扫码工人"}</td>
                   <td>${record.action_type === "finish" ? "完成打卡" : record.action_type === "revoke" ? "撤回打卡" : record.action_type}</td>
@@ -291,7 +296,6 @@
         <table class="plan-table">
           <thead>
             <tr>
-              <th>序号</th>
               <th>主线工序</th>
               <th>状态</th>
               <th>计划开始</th>
@@ -299,9 +303,8 @@
             </tr>
           </thead>
           <tbody>
-            ${drum.tasks.map((task, index) => `
+            ${drum.tasks.map((task) => `
               <tr>
-                <td>${index + 1}</td>
                 <td>${task.process_name}</td>
                 <td><span class="status ${task.status === "已完成" ? "done" : "pending"}">${task.status}</span></td>
                 <td><input class="field plan-date-input" data-task-id="${task.task_id}" data-field="planned_start_date" type="date" value="${task.planned_start_date}"></td>
@@ -333,13 +336,17 @@
               </div>
               <div class="drum-card-stats">
                 <div class="board-stat"><span>已完成工序</span><strong>${drum.tasks.filter((task) => task.status === "已完成").length}/${drum.tasks.length}</strong></div>
-                <div class="board-stat"><span>计划完工</span><strong>${drum.planned_finish_date}</strong></div>
+                <div class="board-stat"><span>公司计划完工</span><strong>${drum.company_plan_date || drum.planned_finish_date}</strong></div>
                 <div class="board-stat"><span>最近打卡</span><strong>${drum.last_checkin_time || "暂无"}</strong></div>
               </div>
-              <div class="drum-card-actions">
+              ${(currentViewer.canViewRecords || currentViewer.canAdjustPlan) ? `<div class="drum-card-actions">
+                ${currentViewer.canViewRecords ? `
                 <button class="btn" type="button" data-toggle-records="${drum.drum_id}">${recordsOpen ? "收起记录" : "打卡记录"}</button>
+                ` : ""}
+                ${currentViewer.canAdjustPlan ? `
                 <button class="btn primary" type="button" data-toggle-plan="${drum.drum_id}">${planningOpen ? "收起计划" : "计划调整"}</button>
-              </div>
+                ` : ""}
+              </div>` : ""}
             </div>
             <div class="process-grid">${processGridHtml(drum)}</div>
             ${recordDrawerHtml(drum)}
@@ -361,6 +368,12 @@
     }
 
     orderSearch.addEventListener("input", renderOrderList);
+    orderFilterTabs.addEventListener("click", (event) => {
+      const filter = event.target.closest("[data-order-filter]");
+      if (!filter) return;
+      currentOrderFilter = filter.dataset.orderFilter;
+      renderOrderList();
+    });
     orderList.addEventListener("click", (event) => {
       const item = event.target.closest("[data-order-code]");
       if (!item) return;

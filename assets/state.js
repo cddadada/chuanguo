@@ -28,6 +28,44 @@
 
   const KEY_PROCESSES = new Set(["纵缝探伤", "环缝探伤", "热处理", "水压", "油漆包装"]);
   const QUANTITY_PROCESSES = new Set(["备料", "纵缝", "纵缝探伤", "环缝", "环缝探伤"]);
+  const SYSTEM_ORDER_LOOKUP = {
+    "410503": {
+      itemName: "鞍山华泰新石项目250t/h干熄焦余热炉",
+      companyPlanDate: "2026-06-18",
+      drums: [
+        { drawingNo: "410503.001.0", plateCount: 6 },
+        { drawingNo: "410503.002.0", plateCount: 6 },
+      ],
+    },
+    "1150053": {
+      itemName: "大连西太二期1x150t/h角管炉",
+      companyPlanDate: "2026-06-05",
+      drums: [
+        { drawingNo: "1150053.001.0", plateCount: 4 },
+        { drawingNo: "1150053.002.0", plateCount: 5 },
+      ],
+    },
+    "32167-1": {
+      itemName: "天脊煤化工50MW高加",
+      companyPlanDate: "2026-06-10",
+      drums: [{ drawingNo: "32167-1.001.0", plateCount: 3 }],
+    },
+    "291717": {
+      itemName: "华泰智维新石一期改造备件",
+      companyPlanDate: "2026-06-12",
+      drums: [{ drawingNo: "291717.001.0", plateCount: 4 }],
+    },
+    "410504": {
+      itemName: "重庆三峰酉阳项目200t/d垃圾炉",
+      companyPlanDate: "2026-06-22",
+      drums: [{ drawingNo: "410504.001.0", plateCount: 6 }],
+    },
+    "410505": {
+      itemName: "杭州正晖松原鑫祥1x600t/h垃圾炉",
+      companyPlanDate: "2026-06-25",
+      drums: [{ drawingNo: "410505.001.0", plateCount: 5 }],
+    },
+  };
 
   const fallbackMemory = {
     routeSource: { uploaded: false, fileName: "", importedAt: "", orderCode: "", itemName: "" },
@@ -95,6 +133,7 @@
     drum.plate_count = Number(drum.plate_count) > 0 ? Number(drum.plate_count) : 6;
     drum.drum_id = drum.drum_id || buildDrumId(drum.production_order_no, drum.drawing_no);
     drum.drum_code = drum.drum_code || buildDrumCode(drum.production_order_no, drum.drawing_no);
+    drum.company_plan_date = drum.company_plan_date || lookupOrderInfo(drum.production_order_no)?.companyPlanDate || drum.planned_finish_date || "";
     const savedProcesses = Array.isArray(drum.enabled_processes) ? drum.enabled_processes.filter((name) => PROCESS_NAMES.includes(name)) : [];
     const configuredProcesses = savedProcesses.length ? savedProcesses : PROCESS_NAMES;
     drum.enabled_processes = configuredProcesses;
@@ -151,6 +190,7 @@
       if (task.status === "待开始") task.status = "待完成";
     });
     drum.planned_finish_date = drum.tasks[drum.tasks.length - 1].planned_finish_date;
+    drum.company_plan_date = drum.company_plan_date || drum.planned_finish_date;
     const completedTasks = drum.tasks.filter((task) => task.status === "已完成");
     drum.last_checkin_time = completedTasks.length ? completedTasks[completedTasks.length - 1].actual_finish_time : "";
     drum.scanRecords = Array.isArray(drum.scanRecords)
@@ -173,6 +213,22 @@
     const configured = drum?.process_quantities && Number(drum.process_quantities[processName]);
     if (configured > 0) return configured;
     return Number(drum?.plate_count) > 0 ? Number(drum.plate_count) : 1;
+  }
+
+  function lookupOrderInfo(orderCode) {
+    const key = String(orderCode || "").trim();
+    const info = SYSTEM_ORDER_LOOKUP[key];
+    if (!info) return null;
+    return {
+      orderCode: key,
+      itemName: info.itemName,
+      companyPlanDate: info.companyPlanDate,
+      drums: info.drums.map((drum, index) => ({
+        drawingNo: drum.drawingNo,
+        drumName: `锅筒 ${index + 1}`,
+        plateCount: drum.plateCount,
+      })),
+    };
   }
 
   function loadState() {
@@ -201,7 +257,8 @@
 
   function createDrum(orderCode, itemName, fileName, options = {}) {
     const customer = inferCustomer(itemName);
-    const project = inferProject(itemName);
+    const systemInfo = lookupOrderInfo(orderCode);
+    const project = inferProject(itemName || systemInfo?.itemName);
     const drawingNo = normalizeDrawingNo(options.drawingNo, orderCode === "410503" ? "410503.001.0" : `${orderCode}.001.0`);
     const drumId = buildDrumId(orderCode, drawingNo);
     const drumCode = buildDrumCode(orderCode, drawingNo);
@@ -246,6 +303,7 @@
       factory: "核容分厂",
       source_file: fileName || "手工登记",
       planned_finish_date: tasks[tasks.length - 1].planned_finish_date,
+      company_plan_date: options.companyPlanDate || systemInfo?.companyPlanDate || tasks[tasks.length - 1].planned_finish_date,
       last_checkin_time: "",
       tasks,
       scanRecords: [],
@@ -524,6 +582,7 @@
         plateCount: spec.plateCount,
         processNames: spec.processNames,
         processQuantities: spec.processQuantities,
+        companyPlanDate: spec.companyPlanDate,
       });
       const existingIndex = state.drums.findIndex((item) => item.production_order_no === normalizedOrder && item.drawing_no === drawingNo);
       if (existingIndex >= 0) {
@@ -704,6 +763,7 @@
     registerDrums,
     getRegistrationConflict,
     getUploadConflict,
+    lookupOrderInfo,
     ensureSeedIfEmpty,
     getCurrentTask,
     getCompletionRate,

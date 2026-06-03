@@ -46,6 +46,7 @@
       const msg = document.getElementById("msg");
       const processNames = DrumDemo.PROCESS_NAMES;
       let rowId = 0;
+      let lookupTimer = 0;
 
       function defaultDrawingNo() {
         const orderCode = orderCodeInput.value.trim();
@@ -99,6 +100,26 @@
         drumRows.appendChild(row);
         syncQuantityInputs(row);
         syncRowState();
+      }
+
+      function applyOrderLookup() {
+        const orderCode = orderCodeInput.value.trim();
+        if (!orderCode) return;
+        const systemInfo = DrumDemo.lookupOrderInfo(orderCode);
+        if (!systemInfo) {
+          showMsg("系统未带出该令号资料，可继续手工维护项目名称和锅筒图号。", "info");
+          return;
+        }
+        itemNameInput.value = systemInfo.itemName;
+        drumRows.innerHTML = "";
+        rowId = 0;
+        systemInfo.drums.forEach((drum) => {
+          addDrumRow(drum.drawingNo, {
+            plateCount: drum.plateCount,
+            processNames,
+          });
+        });
+        showMsg(`已从系统带出 ${orderCode} 的项目名称和 ${systemInfo.drums.length} 个锅筒图号。`, "success");
       }
 
       function syncQuantityInputs(row) {
@@ -155,6 +176,13 @@
         if (addDrumBtn.disabled) return;
         addDrumRow();
       });
+
+      orderCodeInput.addEventListener("input", () => {
+        window.clearTimeout(lookupTimer);
+        lookupTimer = window.setTimeout(applyOrderLookup, 450);
+      });
+
+      orderCodeInput.addEventListener("change", applyOrderLookup);
 
       drumRows.addEventListener("input", (event) => {
         if (event.target.classList.contains("drum-drawing")) syncAddButtonState();

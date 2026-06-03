@@ -594,6 +594,36 @@ button:disabled {
   border-bottom: 1px solid #e5e5e5;
 }
 
+.rail-filter-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.rail-filter-tabs button {
+  display: grid;
+  gap: 2px;
+  place-items: center;
+  min-height: 46px;
+  border: 1px solid #d8dde6;
+  border-radius: 6px;
+  background: #fff;
+  color: #475467;
+  font-weight: 700;
+}
+
+.rail-filter-tabs button.active {
+  border-color: #26724d;
+  background: #e9f7ef;
+  color: #17633d;
+}
+
+.rail-filter-tabs b {
+  font-size: 16px;
+}
+
 .rail-title {
   padding: 10px 14px;
   background: #eef1f5;
@@ -701,9 +731,16 @@ button:disabled {
 }
 
 .board-title span,
+.permission-note,
 .board-stat span {
   color: #666;
   font-size: 12px;
+}
+
+.permission-note {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
 }
 
 .state-legend {
@@ -1275,7 +1312,7 @@ button:disabled {
 .progress-row {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 1fr;
   gap: 5px;
   align-items: start;
   padding: 7px 6px;
@@ -1315,19 +1352,6 @@ button:disabled {
 
 .progress-row.done .process-main {
   padding-right: 14px;
-}
-
-.task-seq {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #f1f4f9;
-  color: #7a8493;
-  font-size: 10px;
-  font-weight: 700;
 }
 
 .progress-row .process-main strong,
@@ -1484,16 +1508,6 @@ button:disabled {
   border-color: #d8dde6;
   background: #f3f5f8;
   color: #667085;
-}
-
-.progress-row.running .task-seq {
-  background: #ffe7bf;
-  color: #a06113;
-}
-
-.progress-row.done .task-seq {
-  background: #cbeed9;
-  color: #1f8b54;
 }
 
 .progress-row.is-submitting {
@@ -2052,7 +2066,7 @@ button:disabled {
 .station-task {
   position: relative;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   align-items: start;
   gap: 6px;
   min-height: 100px;
@@ -2062,18 +2076,6 @@ button:disabled {
   background: #f4f6f8;
   color: #344054;
   text-align: left;
-}
-
-.station-task > span:first-child {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #e4e7ec;
-  color: #667085;
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .station-task strong {
@@ -2105,16 +2107,6 @@ button:disabled {
 .station-task.running {
   border-color: #e19a31;
   background: #fff7e8;
-}
-
-.station-task.done > span:first-child {
-  background: #2eaf6d;
-  color: #fff;
-}
-
-.station-task.running > span:first-child {
-  background: #f7d8a6;
-  color: #8a4b0f;
 }
 
 .station-task:hover,
@@ -2266,9 +2258,12 @@ button:disabled {
     flex-direction: column;
   }
 
-  .drum-row-main,
-  .progress-row {
+  .drum-row-main {
     grid-template-columns: auto 1fr;
+  }
+
+  .progress-row {
+    grid-template-columns: 1fr;
   }
 
   .drum-name-fixed,

@@ -346,7 +346,6 @@
         const visualState = taskVisualState(drum, task);
         return `
           <button class="station-task ${visualState}" type="button" data-task-id="${task.task_id}">
-            <span>${index + 1}</span>
             <strong>${task.process_name}</strong>
             ${needsQuantity(task) ? quantityHtml(drum, task) : ""}
           </button>
@@ -377,26 +376,24 @@
       const requiresQuantity = needsQuantity(task);
       const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
       const current = taskFinishedQuantity(drum, task);
-      const hasQuantityProgress = requiresQuantity && current > 0;
       dialog.hidden = false;
       dialog.innerHTML = `
         <div class="station-dialog-backdrop" data-close-dialog></div>
         <div class="station-dialog-panel">
           <strong>${task.process_name}</strong>
-          <p>${requiresQuantity ? `录入当前累计已完成数量，不能小于当前 ${current} 张，最大不能超过 ${total} 张。` : "确认完成该工序打卡。"}</p>
+          <p>${requiresQuantity ? `录入新的当前累计已完成数量，最大不能超过 ${total} 张。` : "确认完成该工序打卡。"}</p>
           ${requiresQuantity ? `
             <label class="station-dialog-field">
               <span>当前累计已完成数量</span>
               <div class="station-quantity-stepper">
                 <button type="button" data-quantity-step="-1">-</button>
-                <input id="stationQuantity" type="number" min="${current}" max="${total}" value="${current || ""}" placeholder="最多 ${total} 张" inputmode="numeric">
+                <input id="stationQuantity" type="number" min="0" max="${total}" value="${current || ""}" placeholder="最多 ${total} 张" inputmode="numeric">
                 <button type="button" data-quantity-step="1">+</button>
               </div>
             </label>
           ` : ""}
-          <div class="station-dialog-actions ${hasQuantityProgress ? "three-actions" : ""}">
+          <div class="station-dialog-actions">
             <button type="button" class="station-ghost" data-close-dialog>取消</button>
-            ${hasQuantityProgress ? `<button type="button" class="station-danger" data-revoke-task="${drum.drum_code}">撤回上次数量</button>` : ""}
             <button type="button" class="station-primary" data-confirm-task="${drum.drum_code}">确认打卡</button>
           </div>
         </div>
@@ -452,7 +449,7 @@
         const drum = stateStore.findDrum(selectedDrumCode);
         const task = drum.tasks.find((item) => item.task_id === taskButton.dataset.taskId);
         if (!task) return;
-        if (task.status === "已完成") openCompletedDialog(drum, task);
+        if (task.status === "已完成" && !needsQuantity(task)) openCompletedDialog(drum, task);
         else openTaskDialog(drum, task);
       }
     });
@@ -484,7 +481,6 @@
         const quantityInput = dialog.querySelector("#stationQuantity");
         const finishQuantity = quantityInput ? Number(quantityInput.value) : 0;
         const total = needsQuantity(task) ? stateStore.getProcessTargetQuantity(drum, task.process_name) : 0;
-        const current = taskFinishedQuantity(drum, task);
         if (needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity < 0)) {
           showToast(`${task.process_name} 需要填写累计完成数量`);
           quantityInput.focus();
@@ -493,12 +489,6 @@
         }
         if (needsQuantity(task) && finishQuantity > total) {
           showToast(`累计数量不能超过 ${total} 张`);
-          quantityInput.focus();
-          isSubmitting = false;
-          return;
-        }
-        if (needsQuantity(task) && finishQuantity < current) {
-          showToast("累计数量不能小于当前已记录数量，如需纠错请先撤回");
           quantityInput.focus();
           isSubmitting = false;
           return;
