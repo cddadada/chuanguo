@@ -227,6 +227,7 @@
         drawingNo: drum.drawingNo,
         drumName: `锅筒 ${index + 1}`,
         plateCount: drum.plateCount,
+        companyPlanDate: drum.companyPlanDate || info.companyPlanDate,
       })),
     };
   }

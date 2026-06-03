@@ -50,17 +50,38 @@
       <span>CG Flow / 生产执行 / 生产工序跟踪 / 锅筒</span>
     </header>
 
-    <section class="weiwo-content">
-      <aside class="order-rail">
-        <div class="rail-search">
-          <input id="orderSearch" class="field" type="search" placeholder="搜索令号">
-        </div>
-        <div id="orderFilterTabs" class="rail-filter-tabs"></div>
-        <div class="rail-title">令号列表</div>
-        <div id="orderList" class="order-list"></div>
-      </aside>
-
+    <section class="weiwo-content tracking-content">
       <section class="board">
+        <div class="tracking-filter-head">
+          <div>
+            <strong>组件生产工序跟踪</strong>
+          </div>
+        </div>
+        <div class="tracking-filterbar">
+          <label>
+            <span>计划月份：</span>
+            <input class="field month-field" type="month" value="2026-06">
+            <em>至</em>
+            <input class="field month-field" type="month" value="2026-06">
+          </label>
+          <label>
+            <span>状态：</span>
+            <select id="trackingStatus" class="field select-field">
+              <option value="在制">执行中</option>
+              <option value="待启动">待启动</option>
+              <option value="已完成">已完工</option>
+              <option value="全部">全部</option>
+            </select>
+          </label>
+          <label>
+            <span>生产令号：</span>
+            <select id="trackingOrderSelect" class="field select-field"></select>
+          </label>
+          <div class="selected-orders">
+            <span>已选择：</span>
+            <strong id="selectedOrderCount">0 个令号</strong>
+          </div>
+        </div>
         <div class="flow-component-tabs">
           <button type="button">膜式壁</button>
           <button type="button">蛇形管</button>
@@ -83,17 +104,18 @@
     let currentOrderFilter = "在制";
     const currentViewer = { name: "周建国", role: "厂长", canViewRecords: true, canAdjustPlan: true };
 
-    const orderSearch = document.getElementById("orderSearch");
-    const orderFilterTabs = document.getElementById("orderFilterTabs");
-    const orderList = document.getElementById("orderList");
+    const trackingStatus = document.getElementById("trackingStatus");
+    const trackingOrderSelect = document.getElementById("trackingOrderSelect");
+    const selectedOrderCount = document.getElementById("selectedOrderCount");
     const boardHead = document.getElementById("boardHead");
     const orderDrumBoards = document.getElementById("orderDrumBoards");
 
     function selectedOrderDrums() {
+      if (!selectedOrderCode) return [];
       const drums = state.drums
         .filter((drum) => drum.production_order_no === selectedOrderCode)
         .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
-      return drums.length ? drums : state.drums.slice(0, 1);
+      return drums;
     }
 
     function drumsByOrder() {
@@ -134,33 +156,26 @@
       return "在制";
     }
 
-    function renderOrderList() {
-      const keyword = orderSearch.value.trim();
-      const orders = drumsByOrder().filter((orderDrums) => {
-        const text = orderDrums.map((drum) => `${drum.production_order_no}${drum.project_name}${drum.customer_name}${drum.drawing_no}`).join("");
-        return !keyword || text.includes(keyword);
-      });
-      const filters = ["在制", "待启动", "已完成"];
-      const counts = Object.fromEntries(filters.map((filter) => [filter, orders.filter((orderDrums) => orderGroup(orderDrums) === filter).length]));
-      if (!filters.includes(currentOrderFilter)) currentOrderFilter = filters.find((filter) => counts[filter] > 0) || "在制";
-      orderFilterTabs.innerHTML = filters.map((filter) => `
-        <button class="${currentOrderFilter === filter ? "active" : ""}" type="button" data-order-filter="${filter}">
-          <span>${filter}</span>
-          <b>${counts[filter]}</b>
-        </button>
-      `).join("");
-      const visibleOrders = orders.filter((orderDrums) => orderGroup(orderDrums) === currentOrderFilter);
-      orderList.innerHTML = visibleOrders.length ? visibleOrders.map((orderDrums) => {
+    function filteredOrders() {
+      const orders = drumsByOrder();
+      if (currentOrderFilter === "全部") return orders;
+      return orders.filter((orderDrums) => orderGroup(orderDrums) === currentOrderFilter);
+    }
+
+    function renderTopFilters() {
+      const orders = filteredOrders();
+      if (!orders.some((orderDrums) => orderDrums[0].production_order_no === selectedOrderCode)) {
+        selectedOrderCode = orders[0]?.[0]?.production_order_no || "";
+      }
+      trackingOrderSelect.innerHTML = orders.length ? orders.map((orderDrums) => {
         const first = orderDrums[0];
-        const isActive = first.production_order_no === selectedOrderCode;
         return `
-          <button class="order-item ${isActive ? "active" : ""}" data-order-code="${first.production_order_no}">
-            <strong>${first.production_order_no}<em>${orderDrums.length} 个锅筒</em></strong>
-            <span>${first.project_name}</span>
-            <span>${orderDrums.map((drum) => drum.drawing_no).join(" / ")}</span>
-          </button>
+          <option value="${first.production_order_no}" ${first.production_order_no === selectedOrderCode ? "selected" : ""}>
+            ${first.production_order_no} ${first.project_name}
+          </option>
         `;
-      }).join("") : `<div class="order-empty">当前没有${currentOrderFilter}令号</div>`;
+      }).join("") : `<option value="">请选择</option>`;
+      selectedOrderCount.textContent = selectedOrderCode ? "1 个令号" : "0 个令号";
     }
 
     function renderBoardHead(orderDrums) {
@@ -361,26 +376,21 @@
       if (!state.drums.some((drum) => drum.production_order_no === selectedOrderCode)) {
         selectedOrderCode = state.drums[0] ? state.drums[0].production_order_no : "";
       }
+      renderTopFilters();
       const orderDrums = selectedOrderDrums();
-      renderOrderList();
       renderBoardHead(orderDrums);
       renderDrumBoards(orderDrums);
     }
 
-    orderSearch.addEventListener("input", renderOrderList);
-    orderFilterTabs.addEventListener("click", (event) => {
-      const filter = event.target.closest("[data-order-filter]");
-      if (!filter) return;
-      currentOrderFilter = filter.dataset.orderFilter;
-      renderOrderList();
+    trackingStatus.addEventListener("change", () => {
+      currentOrderFilter = trackingStatus.value;
+      planningDrumId = "";
+      recordsDrumId = "";
+      render();
     });
-    orderList.addEventListener("click", (event) => {
-      const item = event.target.closest("[data-order-code]");
-      if (!item) return;
-      const orderDrums = state.drums
-        .filter((drum) => drum.production_order_no === item.dataset.orderCode)
-        .sort((a, b) => a.drawing_no.localeCompare(b.drawing_no, "zh-Hans-CN"));
-      selectedOrderCode = orderDrums[0] ? orderDrums[0].production_order_no : selectedOrderCode;
+
+    trackingOrderSelect.addEventListener("change", () => {
+      selectedOrderCode = trackingOrderSelect.value || selectedOrderCode;
       planningDrumId = "";
       recordsDrumId = "";
       render();

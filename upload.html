@@ -55,6 +55,10 @@
         return `${orderCode}.${String(count).padStart(3, "0")}.0`;
       }
 
+      function defaultCompanyPlanDate() {
+        return DrumDemo.lookupOrderInfo(orderCodeInput.value.trim())?.companyPlanDate || "";
+      }
+
       function processChoices(selected = processNames, quantities = {}) {
         const selectedSet = new Set(selected);
         return processNames.map((processName) => `
@@ -82,6 +86,10 @@
             <label class="plate-count-label">
               <span>钢板数量</span>
               <input class="field plate-count" type="number" min="1" step="1" value="${options.plateCount || 1}" />
+            </label>
+            <label class="company-plan-label">
+              <span>计划完成日期</span>
+              <input class="field company-plan-date" type="date" value="${options.companyPlanDate || defaultCompanyPlanDate()}" />
             </label>
             <button class="btn" type="button" data-remove-row>移除</button>
           </div>
@@ -116,6 +124,7 @@
         systemInfo.drums.forEach((drum) => {
           addDrumRow(drum.drawingNo, {
             plateCount: drum.plateCount,
+            companyPlanDate: drum.companyPlanDate || systemInfo.companyPlanDate,
             processNames,
           });
         });
@@ -154,6 +163,7 @@
           drawingNo: row.querySelector(".drum-drawing").value.trim(),
           drumName: `锅筒 ${index + 1}`,
           plateCount: Number(row.querySelector(".plate-count").value),
+          companyPlanDate: row.querySelector(".company-plan-date").value,
           processNames: [...row.querySelectorAll(".process-choice input:checked")].map((input) => input.value),
           processQuantities: Object.fromEntries([...row.querySelectorAll(".process-quantity-input")].map((input) => [input.dataset.processQuantity, Number(input.value)])),
         }));
@@ -165,6 +175,7 @@
         if (!payload.itemName) return "请输入项目名称";
         if (!payload.drums.length || payload.drums.some((drum) => !drum.drawingNo)) return "请填写锅筒图号";
         if (payload.drums.some((drum) => !Number.isInteger(drum.plateCount) || drum.plateCount <= 0)) return "请填写有效的钢板数量";
+        if (payload.drums.some((drum) => !drum.companyPlanDate)) return "请填写每个锅筒的计划完成日期";
         if (payload.drums.some((drum) => !drum.processNames.length)) return "每个锅筒至少选择一道工序";
         if (payload.drums.some((drum) => drum.processNames.some((processName) => DrumDemo.QUANTITY_PROCESSES.has(processName) && (!Number.isInteger(drum.processQuantities[processName]) || drum.processQuantities[processName] <= 0)))) return "请填写数量工序的有效目标数量";
         const drawingSet = new Set(payload.drums.map((drum) => drum.drawingNo));
