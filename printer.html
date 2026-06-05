@@ -29,7 +29,12 @@
     function orderGroup(orderDrums) {
       const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
       const currents = orderDrums.map((drum) => stateStore.getCurrentTask(drum));
+      const hasStarted = orderDrums.some((drum) => {
+        return drum.tasks.some((task) => task.status === "已完成" || Number(task.finish_quantity) > 0)
+          || (Array.isArray(drum.scanRecords) && drum.scanRecords.length > 0);
+      });
       if (rates.every((rate) => rate === 100)) return "已完成";
+      if (hasStarted) return "在制";
       if (currents.every((current) => current.process_sequence === 1 && current.status !== "已完成")) return "待启动";
       return "在制";
     }

@@ -151,7 +151,12 @@
     function orderGroup(orderDrums) {
       const rates = orderDrums.map((drum) => stateStore.getCompletionRate(drum));
       const currents = orderDrums.map((drum) => stateStore.getCurrentTask(drum));
+      const hasStarted = orderDrums.some((drum) => {
+        return drum.tasks.some((task) => task.status === "已完成" || taskFinishedQuantity(drum, task) > 0)
+          || (Array.isArray(drum.scanRecords) && drum.scanRecords.length > 0);
+      });
       if (rates.every((rate) => rate === 100)) return "已完成";
+      if (hasStarted) return "在制";
       if (currents.every((current) => current.process_sequence === 1 && current.status !== "已完成")) return "待启动";
       return "在制";
     }
@@ -219,6 +224,9 @@
 
     function taskFinishedQuantity(drum, task) {
       const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
+      if (stateStore.QUANTITY_PROCESSES.has(task.process_name)) {
+        return stateStore.getTaskEffectiveQuantity(drum, task);
+      }
       if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
       return task.status === "已完成" ? total : 0;
     }
@@ -253,7 +261,12 @@
 
     function recordDrawerHtml(drum) {
       if (recordsDrumId !== drum.drum_id) return "";
-      const records = drum.scanRecords && drum.scanRecords.length ? drum.scanRecords : fallbackRecords(drum);
+      const rawRecords = drum.scanRecords && drum.scanRecords.length ? drum.scanRecords : fallbackRecords(drum);
+      const records = rawRecords.filter((record) => !(Number(record.isDeleted) === 1 && Number(record.target_quantity)));
+      const dailyQuantityText = (record) => {
+        if (!Number(record.target_quantity)) return "-";
+        return `${Number(record.finish_quantity) || 0} / ${Number(record.target_quantity) || 0} 张`;
+      };
       return `
         <section class="record-drawer">
         <div class="record-head">
@@ -268,20 +281,18 @@
             <thead>
               <tr>
                 <th>工序</th>
+                <th>日报日期</th>
+                <th>当天完成数量</th>
                 <th>打卡人</th>
-                <th>打卡动作</th>
-                <th>累计数量</th>
-                <th>完成时间</th>
               </tr>
             </thead>
             <tbody>
               ${records.map((record) => `
-                <tr>
+                <tr class="${Number(record.isDeleted) === 1 ? "deleted" : ""}">
                   <td>${record.process_name}</td>
+                  <td>${record.report_date || String(record.scan_time || "").slice(0, 10)}</td>
+                  <td>${dailyQuantityText(record)}</td>
                   <td>${record.scan_user || "扫码工人"}</td>
-                  <td>${record.action_type === "finish" ? "完成打卡" : record.action_type === "revoke" ? "撤回打卡" : record.action_type}</td>
-                  <td>${record.target_quantity ? `${record.finish_quantity || 0}/${record.target_quantity} 张` : "-"}</td>
-                  <td>${record.scan_time}</td>
                 </tr>
               `).join("")}
             </tbody>

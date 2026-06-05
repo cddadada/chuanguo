@@ -52,9 +52,7 @@
     }
 
     function taskFinishedQuantity(drum, task) {
-      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
-      if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
-      return task.status === "已完成" ? total : 0;
+      return stateStore.getTaskEffectiveQuantity(drum, task);
     }
 
     function quantityProgressHtml(drum, task) {
@@ -95,21 +93,59 @@
       const requiresQuantity = needsQuantity(task);
       const targetQuantity = stateStore.getProcessTargetQuantity(drum, task.process_name);
       const currentQuantity = taskFinishedQuantity(drum, task);
+      const today = stateStore.currentTime().slice(0, 10);
+      const todayRecord = requiresQuantity ? stateStore.findQuantityRecordByDate(drum, task.process_name, today) : null;
+      const remainingQuantity = requiresQuantity ? stateStore.getTaskRemainingQuantity(drum, task) : 0;
+      const records = requiresQuantity ? stateStore.quantityRecords(drum, task.process_name) : [];
       actionSheet.hidden = false;
       actionSheet.innerHTML = `
         <div class="sheet-backdrop" data-close-sheet></div>
         <div class="sheet-panel">
           <strong>${task.process_name}</strong>
-          <p>${requiresQuantity ? `录入新的当前累计已完成数量，最大不能超过 ${targetQuantity} 张。` : "确认完成该工序打卡。"}</p>
+          <p>${requiresQuantity ? `当前累计 ${currentQuantity}/${targetQuantity} 张，${todayRecord ? `今天已打卡 ${todayRecord.finish_quantity || 0} 张，不能重复打卡。如需调整，请在历史日报数量中修改今天记录。` : `今天最多可填 ${remainingQuantity} 张。`}` : "确认完成该工序打卡。"}</p>
           ${requiresQuantity ? `
+            ${todayRecord ? "" : `
             <label class="sheet-field">
-              <span>当前累计已完成数量</span>
-              <input id="sheetQuantity" class="quantity-field" type="number" min="0" max="${targetQuantity}" value="${currentQuantity || ""}" placeholder="最多 ${targetQuantity} 张" inputmode="numeric">
+              <span>今天完成数量</span>
+              <input id="sheetQuantity" class="quantity-field" type="number" min="1" max="${remainingQuantity}" value="" placeholder="最多 ${remainingQuantity} 张" inputmode="numeric" ${remainingQuantity <= 0 ? "disabled" : ""}>
             </label>
+            `}
+            <div class="quantity-record-list">
+              <b>历史日报数量</b>
+              ${records.length ? records.map((record) => `
+                <div class="quantity-record">
+                  <span>${record.report_date || String(record.scan_time).slice(0, 10)} · ${record.finish_quantity || 0} 张 · ${record.scan_user || "扫码工人"}</span>
+                  <button class="text-btn" type="button" data-correct-record="${record.record_id}">修改</button>
+                </div>
+              `).join("") : `<span class="record-empty">暂无日报数量记录</span>`}
+            </div>
           ` : ""}
           <div class="sheet-actions">
             <button class="btn" type="button" data-close-sheet>取消</button>
-            <button class="btn primary" type="button" data-confirm-finish="${drum.drum_code}">确认打卡</button>
+            ${requiresQuantity && todayRecord ? "" : `<button class="btn primary" type="button" data-confirm-finish="${drum.drum_code}" ${requiresQuantity && remainingQuantity <= 0 ? "disabled" : ""}>确认打卡</button>`}
+          </div>
+        </div>
+      `;
+      actionSheet.querySelector("input")?.focus();
+    }
+
+    function openCorrectionSheet(drum, task, recordId) {
+      pendingTaskId = task.task_id;
+      const record = drum.scanRecords.find((item) => item.record_id === recordId);
+      if (!record) return;
+      const maxQuantity = stateStore.getTaskRemainingQuantity(drum, task, { excludeRecordId: record.record_id });
+      actionSheet.innerHTML = `
+        <div class="sheet-backdrop" data-close-sheet></div>
+        <div class="sheet-panel">
+          <strong>修改${task.process_name}数量</strong>
+          <p>${record.report_date || String(record.scan_time).slice(0, 10)} 原记录 ${record.finish_quantity || 0} 张，修改后最多 ${maxQuantity} 张。</p>
+          <label class="sheet-field">
+            <span>正确的当天完成数量</span>
+            <input id="sheetCorrectionQuantity" class="quantity-field" type="number" min="0" max="${maxQuantity}" value="${record.finish_quantity || 0}" inputmode="numeric">
+          </label>
+          <div class="sheet-actions">
+            <button class="btn" type="button" data-close-sheet>取消</button>
+            <button class="btn primary" type="button" data-submit-correction="${record.record_id}">确认修改</button>
           </div>
         </div>
       `;
@@ -191,6 +227,35 @@
         closeActionSheet();
         return;
       }
+      const correctButton = event.target.closest("[data-correct-record]");
+      if (correctButton) {
+        const drum = currentDrum();
+        const task = drum.tasks.find((item) => item.task_id === pendingTaskId);
+        if (drum && task) openCorrectionSheet(drum, task, correctButton.dataset.correctRecord);
+        return;
+      }
+      const submitCorrection = event.target.closest("[data-submit-correction]");
+      if (submitCorrection && !isAdvancing) {
+        const drum = currentDrum();
+        const task = drum?.tasks.find((item) => item.task_id === pendingTaskId);
+        const input = actionSheet.querySelector("#sheetCorrectionQuantity");
+        const quantity = Number(input?.value);
+        const maxQuantity = Number(input?.max) || 0;
+        if (!task || !input || !Number.isInteger(quantity) || quantity < 0 || quantity > maxQuantity) {
+          showToast(`数量需要在 0 到 ${maxQuantity} 张之间`);
+          input?.focus();
+          return;
+        }
+        isAdvancing = true;
+        stateStore.correctQuantityRecord(drum.drum_code, submitCorrection.dataset.submitCorrection, quantity);
+        closeActionSheet();
+        window.setTimeout(() => {
+          render();
+          showToast(`${task.process_name} 数量已修改`);
+          isAdvancing = false;
+        }, 180);
+        return;
+      }
       const confirmButton = event.target.closest("[data-confirm-finish]");
       if (!confirmButton || isAdvancing) return;
       const drum = currentDrum();
@@ -203,13 +268,14 @@
       const quantityInput = actionSheet.querySelector("#sheetQuantity");
       const finishQuantity = quantityInput ? Number(quantityInput.value) : 0;
       const targetQuantity = task && needsQuantity(task) ? stateStore.getProcessTargetQuantity(drum, task.process_name) : 0;
-      if (task && needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity < 0)) {
-        showToast(`${task.process_name} 需要填写累计完成数量`);
+      const remainingQuantity = task && needsQuantity(task) ? stateStore.getTaskRemainingQuantity(drum, task) : 0;
+      if (task && needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity <= 0)) {
+        showToast(`${task.process_name} 需要填写今天完成数量`);
         quantityInput?.focus();
         return;
       }
-      if (task && needsQuantity(task) && finishQuantity > targetQuantity) {
-        showToast(`累计数量不能超过 ${targetQuantity} 张`);
+      if (task && needsQuantity(task) && finishQuantity > remainingQuantity) {
+        showToast(`今天完成数量不能超过 ${remainingQuantity} 张`);
         quantityInput?.focus();
         return;
       }
@@ -217,6 +283,13 @@
       confirmButton.disabled = true;
       confirmButton.textContent = "提交中...";
       const result = stateStore.completeTask(confirmButton.dataset.confirmFinish, pendingTaskId, { finishQuantity });
+      if (result.blockedReason === "already_reported_today") {
+        showToast("今日已打卡，请在历史日报数量中修改记录");
+        isAdvancing = false;
+        confirmButton.disabled = false;
+        confirmButton.textContent = "确认打卡";
+        return;
+      }
       if (!result.task) {
         showToast("未找到锅筒数据");
         isAdvancing = false;
@@ -225,7 +298,7 @@
         return;
       }
       if (needsQuantity(result.task) && result.task.status !== "已完成") {
-        showToast(`${result.task.process_name} 已记录 ${result.task.finish_quantity}/${stateStore.getProcessTargetQuantity(result.drum, result.task.process_name)} 张`);
+        showToast(`${result.task.process_name} 今天已记录 ${finishQuantity} 张`);
       } else {
         showToast(`${result.task.process_name} 已完成`);
       }

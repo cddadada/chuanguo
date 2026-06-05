@@ -242,9 +242,7 @@
     }
 
     function taskFinishedQuantity(drum, task) {
-      const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
-      if (Number(task.finish_quantity) > 0) return Math.min(Number(task.finish_quantity), total);
-      return task.status === "已完成" ? total : 0;
+      return stateStore.getTaskEffectiveQuantity(drum, task);
     }
 
     function taskVisualState(drum, task) {
@@ -376,25 +374,67 @@
       const requiresQuantity = needsQuantity(task);
       const total = stateStore.getProcessTargetQuantity(drum, task.process_name);
       const current = taskFinishedQuantity(drum, task);
+      const today = stateStore.currentTime().slice(0, 10);
+      const todayRecord = requiresQuantity ? stateStore.findQuantityRecordByDate(drum, task.process_name, today) : null;
+      const remaining = requiresQuantity ? stateStore.getTaskRemainingQuantity(drum, task) : 0;
+      const records = requiresQuantity ? stateStore.quantityRecords(drum, task.process_name) : [];
       dialog.hidden = false;
       dialog.innerHTML = `
         <div class="station-dialog-backdrop" data-close-dialog></div>
         <div class="station-dialog-panel">
           <strong>${task.process_name}</strong>
-          <p>${requiresQuantity ? `录入新的当前累计已完成数量，最大不能超过 ${total} 张。` : "确认完成该工序打卡。"}</p>
+          <p>${requiresQuantity ? `当前累计 ${current}/${total} 张，${todayRecord ? `今天已打卡 ${todayRecord.finish_quantity || 0} 张，不能重复打卡。如需调整，请在历史日报数量中修改今天记录。` : `今天最多可填 ${remaining} 张。`}` : "确认完成该工序打卡。"}</p>
           ${requiresQuantity ? `
+            ${todayRecord ? "" : `
             <label class="station-dialog-field">
-              <span>当前累计已完成数量</span>
+              <span>今天完成数量</span>
               <div class="station-quantity-stepper">
                 <button type="button" data-quantity-step="-1">-</button>
-                <input id="stationQuantity" type="number" min="0" max="${total}" value="${current || ""}" placeholder="最多 ${total} 张" inputmode="numeric">
+                <input id="stationQuantity" type="number" min="1" max="${remaining}" value="" placeholder="最多 ${remaining} 张" inputmode="numeric" ${remaining <= 0 ? "disabled" : ""}>
                 <button type="button" data-quantity-step="1">+</button>
               </div>
             </label>
+            `}
+            <div class="quantity-record-list">
+              <b>历史日报数量</b>
+              ${records.length ? records.map((record) => `
+                <div class="quantity-record">
+                  <span>${record.report_date || String(record.scan_time).slice(0, 10)} · ${record.finish_quantity || 0} 张 · ${record.scan_user || "扫码工人"}</span>
+                  <button type="button" class="text-btn" data-correct-record="${record.record_id}">修改</button>
+                </div>
+              `).join("") : `<span class="record-empty">暂无日报数量记录</span>`}
+            </div>
           ` : ""}
           <div class="station-dialog-actions">
             <button type="button" class="station-ghost" data-close-dialog>取消</button>
-            <button type="button" class="station-primary" data-confirm-task="${drum.drum_code}">确认打卡</button>
+            ${requiresQuantity && todayRecord ? "" : `<button type="button" class="station-primary" data-confirm-task="${drum.drum_code}" ${requiresQuantity && remaining <= 0 ? "disabled" : ""}>确认打卡</button>`}
+          </div>
+        </div>
+      `;
+      dialog.querySelector("input")?.focus();
+    }
+
+    function openCorrectionDialog(drum, task, recordId) {
+      pendingTaskId = task.task_id;
+      const record = drum.scanRecords.find((item) => item.record_id === recordId);
+      if (!record) return;
+      const maxQuantity = stateStore.getTaskRemainingQuantity(drum, task, { excludeRecordId: record.record_id });
+      dialog.innerHTML = `
+        <div class="station-dialog-backdrop" data-close-dialog></div>
+        <div class="station-dialog-panel">
+          <strong>修改${task.process_name}数量</strong>
+          <p>${record.report_date || String(record.scan_time).slice(0, 10)} 原记录 ${record.finish_quantity || 0} 张，修改后最多 ${maxQuantity} 张。</p>
+          <label class="station-dialog-field">
+            <span>正确的当天完成数量</span>
+            <div class="station-quantity-stepper">
+              <button type="button" data-correction-step="-1">-</button>
+              <input id="stationCorrectionQuantity" type="number" min="0" max="${maxQuantity}" value="${record.finish_quantity || 0}" inputmode="numeric">
+              <button type="button" data-correction-step="1">+</button>
+            </div>
+          </label>
+          <div class="station-dialog-actions">
+            <button type="button" class="station-ghost" data-close-dialog>取消</button>
+            <button type="button" class="station-primary" data-submit-correction="${record.record_id}">确认修改</button>
           </div>
         </div>
       `;
@@ -470,6 +510,45 @@
         input.value = next;
         return;
       }
+      const correctionStep = event.target.closest("[data-correction-step]");
+      if (correctionStep) {
+        const input = dialog.querySelector("#stationCorrectionQuantity");
+        if (!input) return;
+        const min = Number(input.min) || 0;
+        const max = Number(input.max) || min;
+        const fallback = input.value === "" ? min : Number(input.value);
+        input.value = Math.max(min, Math.min(max, fallback + Number(correctionStep.dataset.correctionStep)));
+        return;
+      }
+      const correctButton = event.target.closest("[data-correct-record]");
+      if (correctButton) {
+        const drum = stateStore.findDrum(selectedDrumCode);
+        const task = drum.tasks.find((item) => item.task_id === pendingTaskId);
+        if (drum && task) openCorrectionDialog(drum, task, correctButton.dataset.correctRecord);
+        return;
+      }
+      const submitCorrection = event.target.closest("[data-submit-correction]");
+      if (submitCorrection && !isSubmitting) {
+        const drum = stateStore.findDrum(selectedDrumCode);
+        const task = drum.tasks.find((item) => item.task_id === pendingTaskId);
+        const input = dialog.querySelector("#stationCorrectionQuantity");
+        const quantity = Number(input?.value);
+        const maxQuantity = Number(input?.max) || 0;
+        if (!Number.isInteger(quantity) || quantity < 0 || quantity > maxQuantity) {
+          showToast(`数量需要在 0 到 ${maxQuantity} 张之间`);
+          input?.focus();
+          return;
+        }
+        isSubmitting = true;
+        stateStore.correctQuantityRecord(drum.drum_code, submitCorrection.dataset.submitCorrection, quantity, { correctUser: currentUser.name });
+        closeDialog();
+        window.setTimeout(() => {
+          renderSelectedDrum();
+          showToast(`${task.process_name} 数量已修改`);
+          isSubmitting = false;
+        }, 180);
+        return;
+      }
       const confirm = event.target.closest("[data-confirm-task]");
       const revoke = event.target.closest("[data-revoke-task]");
       if ((!confirm && !revoke) || isSubmitting) return;
@@ -481,23 +560,29 @@
         const quantityInput = dialog.querySelector("#stationQuantity");
         const finishQuantity = quantityInput ? Number(quantityInput.value) : 0;
         const total = needsQuantity(task) ? stateStore.getProcessTargetQuantity(drum, task.process_name) : 0;
-        if (needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity < 0)) {
-          showToast(`${task.process_name} 需要填写累计完成数量`);
+        const remaining = needsQuantity(task) ? stateStore.getTaskRemainingQuantity(drum, task) : 0;
+        if (needsQuantity(task) && (quantityInput.value === "" || !Number.isInteger(finishQuantity) || finishQuantity <= 0)) {
+          showToast(`${task.process_name} 需要填写今天完成数量`);
           quantityInput.focus();
           isSubmitting = false;
           return;
         }
-        if (needsQuantity(task) && finishQuantity > total) {
-          showToast(`累计数量不能超过 ${total} 张`);
+        if (needsQuantity(task) && finishQuantity > remaining) {
+          showToast(`今天完成数量不能超过 ${remaining} 张`);
           quantityInput.focus();
           isSubmitting = false;
           return;
         }
-        stateStore.completeTask(drum.drum_code, task.task_id, { finishQuantity, finishUser: currentUser.name });
+        const result = stateStore.completeTask(drum.drum_code, task.task_id, { finishQuantity, finishUser: currentUser.name });
+        if (result.blockedReason === "already_reported_today") {
+          showToast("今日已打卡，请在历史日报数量中修改记录");
+          isSubmitting = false;
+          return;
+        }
         closeDialog();
         window.setTimeout(() => {
           renderSelectedDrum();
-          showToast(needsQuantity(task) && finishQuantity < total ? `${task.process_name} 已记录 ${finishQuantity}/${total} 张` : `${task.process_name} 已完成`);
+          showToast(needsQuantity(task) && result.task?.status !== "已完成" ? `${task.process_name} 今天已记录 ${finishQuantity} 张` : `${task.process_name} 已完成`);
           isSubmitting = false;
         }, 180);
       }

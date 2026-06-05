@@ -65,6 +65,16 @@
       companyPlanDate: "2026-06-25",
       drums: [{ drawingNo: "410505.001.0", plateCount: 5 }],
     },
+    "410506": {
+      itemName: "能源-内蒙古建龙-固固换热余热锅炉",
+      companyPlanDate: "2026-06-28",
+      drums: [{ drawingNo: "410506.001.0", plateCount: 4 }],
+    },
+    "410507": {
+      itemName: "能源-内蒙古建龙-固固换热余热锅炉二期",
+      companyPlanDate: "2026-06-29",
+      drums: [{ drawingNo: "410507.001.0", plateCount: 4 }],
+    },
   };
 
   const fallbackMemory = {
@@ -202,8 +212,11 @@
             process_sequence: PROCESS_NAMES.indexOf(record.process_name === "卷制/纵缝" ? "纵缝" : record.process_name) + 1 || record.process_sequence,
             finish_quantity: Number(record.finish_quantity) || 0,
             target_quantity: Number(record.target_quantity) || 0,
+            report_date: record.report_date || reportDateFromTime(record.scan_time),
+            isDeleted: Number(record.isDeleted ?? record.is_deleted ?? 0),
           }))
       : [];
+    syncQuantityTasksFromRecords(drum);
     drum.last_checkin_time = drum.scanRecords[0]?.scan_time || drum.last_checkin_time;
     return drum;
   }
@@ -213,6 +226,75 @@
     const configured = drum?.process_quantities && Number(drum.process_quantities[processName]);
     if (configured > 0) return configured;
     return Number(drum?.plate_count) > 0 ? Number(drum.plate_count) : 1;
+  }
+
+  function isRecordDeleted(record) {
+    return Number(record?.isDeleted ?? record?.is_deleted ?? 0) === 1;
+  }
+
+  function reportDateFromTime(value) {
+    return String(value || currentTime()).slice(0, 10);
+  }
+
+  function quantityRecords(drum, processName, options = {}) {
+    const records = Array.isArray(drum?.scanRecords) ? drum.scanRecords : [];
+    return records.filter((record) => {
+      if (record.process_name !== processName) return false;
+      if (record.action_type !== "finish") return false;
+      if (!Number(record.target_quantity)) return false;
+      if (!options.includeDeleted && isRecordDeleted(record)) return false;
+      return true;
+    });
+  }
+
+  function findQuantityRecordByDate(drum, processName, reportDate, options = {}) {
+    return quantityRecords(drum, processName, options).find((record) => record.report_date === reportDate) || null;
+  }
+
+  function getTaskEffectiveQuantity(drum, taskOrProcessName, options = {}) {
+    const processName = typeof taskOrProcessName === "string" ? taskOrProcessName : taskOrProcessName?.process_name;
+    if (!QUANTITY_PROCESSES.has(processName)) return 0;
+    const total = getProcessTargetQuantity(drum, processName);
+    const sum = quantityRecords(drum, processName, options)
+      .reduce((count, record) => count + (Number(record.finish_quantity) || 0), 0);
+    if (sum > 0) return Math.min(sum, total);
+    const task = typeof taskOrProcessName === "string"
+      ? drum?.tasks?.find((item) => item.process_name === processName)
+      : taskOrProcessName;
+    return Math.min(Number(task?.finish_quantity) || 0, total);
+  }
+
+  function getTaskRemainingQuantity(drum, taskOrProcessName, options = {}) {
+    const processName = typeof taskOrProcessName === "string" ? taskOrProcessName : taskOrProcessName?.process_name;
+    const total = getProcessTargetQuantity(drum, processName);
+    const excludedRecordId = options.excludeRecordId || "";
+    const completed = quantityRecords(drum, processName)
+      .filter((record) => record.record_id !== excludedRecordId)
+      .reduce((count, record) => count + (Number(record.finish_quantity) || 0), 0);
+    return Math.max(0, total - completed);
+  }
+
+  function syncQuantityTaskFromRecords(drum, task) {
+    if (!QUANTITY_PROCESSES.has(task.process_name)) return task;
+    const total = getProcessTargetQuantity(drum, task.process_name);
+    const records = quantityRecords(drum, task.process_name);
+    const quantity = records.length
+      ? records.reduce((count, record) => count + (Number(record.finish_quantity) || 0), 0)
+      : Number(task.finish_quantity) || 0;
+    task.finish_quantity = Math.min(quantity, total);
+    task.status = task.finish_quantity >= total ? "已完成" : "待完成";
+    const latest = records[0];
+    if (latest) {
+      task.actual_finish_time = task.status === "已完成" ? latest.scan_time : "";
+      task.finish_user = task.status === "已完成" ? latest.scan_user : "";
+    }
+    return task;
+  }
+
+  function syncQuantityTasksFromRecords(drum) {
+    if (!drum || !Array.isArray(drum.tasks)) return drum;
+    drum.tasks.forEach((task) => syncQuantityTaskFromRecords(drum, task));
+    return drum;
   }
 
   function lookupOrderInfo(orderCode) {
@@ -355,9 +437,11 @@
       process_sequence: task.process_sequence,
       action_type: "finish",
       scan_time: task.actual_finish_time,
+      report_date: reportDateFromTime(task.actual_finish_time),
       scan_user: task.finish_user,
       finish_quantity: Number(task.finish_quantity) || 0,
       target_quantity: getProcessTargetQuantity(drum, task.process_name),
+      isDeleted: 0,
     }));
     drum.notifyRecords = completedTasks
       .filter((task) => KEY_PROCESSES.has(task.process_name))
@@ -390,9 +474,11 @@
       process_sequence: task.process_sequence,
       action_type: "finish",
       scan_time: task.actual_finish_time,
+      report_date: reportDateFromTime(task.actual_finish_time),
       scan_user: task.finish_user,
       finish_quantity: Number(task.finish_quantity) || 0,
       target_quantity: getProcessTargetQuantity(drum, task.process_name),
+      isDeleted: 0,
     });
     return drum;
   }
@@ -449,6 +535,14 @@
       applyDemoProgress(createDrum("410505", "杭州正晖松原鑫祥1x600t/h垃圾炉", "手工登记", {
         plateCount: 5,
         processNames: fullRoute,
+      }), 0),
+      applyDemoProgress(createDrum("410506", "能源-内蒙古建龙-固固换热余热锅炉", "手工登记", {
+        plateCount: 4,
+        processNames: weldRoute,
+      }), 0),
+      applyDemoProgress(createDrum("410507", "能源-内蒙古建龙-固固换热余热锅炉二期", "手工登记", {
+        plateCount: 4,
+        processNames: weldRoute,
       }), 0),
       applyDemoProgress(createDrum("291717", "华泰智维新石一期改造备件", "手工登记", {
         plateCount: 4,
@@ -677,27 +771,40 @@
     const isQuantityProcess = QUANTITY_PROCESSES.has(task.process_name);
     const totalQuantity = getProcessTargetQuantity(drum, task.process_name);
     const inputQuantity = Number(options.finishQuantity);
-    const nextQuantity = isQuantityProcess
-      ? Math.max(0, Math.min(totalQuantity, Number.isFinite(inputQuantity) ? inputQuantity : 0))
+    const finishTime = currentTime();
+    const reportDate = options.reportDate || reportDateFromTime(finishTime);
+    const sameDayRecord = isQuantityProcess ? findQuantityRecordByDate(drum, task.process_name, reportDate) : null;
+    if (sameDayRecord) {
+      return { state, drum, task, next: getCurrentTask(drum), blockedReason: "already_reported_today", record: sameDayRecord };
+    }
+    const remainingQuantity = isQuantityProcess ? getTaskRemainingQuantity(drum, task) : 0;
+    const dailyQuantity = isQuantityProcess
+      ? Math.max(0, Math.min(remainingQuantity, Number.isFinite(inputQuantity) ? inputQuantity : 0))
       : 0;
-    task.status = !isQuantityProcess || nextQuantity >= totalQuantity ? "已完成" : "待完成";
-    task.actual_finish_time = currentTime();
-    task.finish_user = options.finishUser || "扫码工人";
+    const finishUser = options.finishUser || "扫码工人";
+    task.actual_finish_time = finishTime;
+    task.finish_user = finishUser;
     task.delay_days = 0;
     task.stagnation_hours = 0;
-    task.finish_quantity = nextQuantity;
-    drum.last_checkin_time = task.actual_finish_time;
+    if (!isQuantityProcess) {
+      task.status = "已完成";
+      task.finish_quantity = 0;
+    }
+    drum.last_checkin_time = finishTime;
     drum.scanRecords.unshift({
       record_id: `R-${Date.now()}`,
       drum_code: drum.drum_code,
       process_sequence: task.process_sequence,
       process_name: task.process_name,
       action_type: "finish",
-      scan_time: task.actual_finish_time,
-      scan_user: task.finish_user,
-      finish_quantity: task.finish_quantity,
+      scan_time: finishTime,
+      report_date: reportDate,
+      scan_user: finishUser,
+      finish_quantity: dailyQuantity,
       target_quantity: totalQuantity,
+      isDeleted: 0,
     });
+    if (isQuantityProcess) syncQuantityTaskFromRecords(drum, task);
     if (task.status === "已完成" && KEY_PROCESSES.has(task.process_name)) {
       drum.notifyRecords.unshift({
         notify_id: `N-${Date.now()}`,
@@ -708,6 +815,42 @@
     const next = getCurrentTask(drum);
     saveState(state);
     return { state, drum, task, next };
+  }
+
+  function correctQuantityRecord(idOrCode, recordId, newQuantity, options = {}) {
+    const state = ensureSeedIfEmpty();
+    const drum = state.drums.find((item) => item.drum_code === idOrCode || item.drum_id === idOrCode || item.production_order_no === idOrCode) || state.drums[0] || null;
+    if (!drum) return { state, drum: null, task: null, oldRecord: null, newRecord: null };
+    const oldRecord = drum.scanRecords.find((record) => record.record_id === recordId);
+    if (!oldRecord || !QUANTITY_PROCESSES.has(oldRecord.process_name)) return { state, drum, task: null, oldRecord: null, newRecord: null };
+    const task = drum.tasks.find((item) => item.process_name === oldRecord.process_name);
+    if (!task) return { state, drum, task: null, oldRecord, newRecord: null };
+    const maxQuantity = getTaskRemainingQuantity(drum, task, { excludeRecordId: oldRecord.record_id });
+    const quantity = Math.max(0, Math.min(maxQuantity, Number(newQuantity) || 0));
+    oldRecord.isDeleted = 1;
+    oldRecord.revoke_time = currentTime();
+    oldRecord.revoke_user = options.correctUser || "扫码工人";
+    oldRecord.remark = "数量修改作废";
+    const correctionTime = currentTime();
+    const newRecord = {
+      record_id: `R-${Date.now()}-C`,
+      drum_code: drum.drum_code,
+      process_sequence: task.process_sequence,
+      process_name: task.process_name,
+      action_type: "finish",
+      scan_time: correctionTime,
+      report_date: oldRecord.report_date || reportDateFromTime(oldRecord.scan_time),
+      scan_user: options.correctUser || "扫码工人",
+      finish_quantity: quantity,
+      target_quantity: getProcessTargetQuantity(drum, task.process_name),
+      isDeleted: 0,
+      corrected_from: oldRecord.record_id,
+    };
+    drum.scanRecords.unshift(newRecord);
+    syncQuantityTaskFromRecords(drum, task);
+    drum.last_checkin_time = correctionTime;
+    saveState(state);
+    return { state, drum, task, oldRecord, newRecord };
   }
 
   function revokeTask(idOrCode, taskId, options = {}) {
@@ -725,9 +868,11 @@
       process_name: task.process_name,
       action_type: "revoke",
       scan_time: revokeTime,
+      report_date: reportDateFromTime(revokeTime),
       scan_user: options.revokeUser || "扫码工人",
       finish_quantity: previousQuantity,
       target_quantity: getProcessTargetQuantity(drum, task.process_name),
+      isDeleted: 0,
     });
     task.status = "待完成";
     task.actual_finish_time = "";
@@ -769,11 +914,16 @@
     getCurrentTask,
     getCompletionRate,
     getProcessTargetQuantity,
+    getTaskEffectiveQuantity,
+    getTaskRemainingQuantity,
+    quantityRecords,
+    findQuantityRecordByDate,
     getRisk,
     findDrum,
     printLabel,
     completeCurrentTask,
     completeTask,
+    correctQuantityRecord,
     revokeTask,
     savePlanDates,
     currentTime,

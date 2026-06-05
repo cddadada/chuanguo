@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "eval": "node scripts/eval-regression.mjs",
+    "check:docs": "node scripts/docs-check.mjs",
+    "check": "npm run eval"
+  },
   "dependencies": {
     "playwright": "^1.60.0",
     "sharp": "^0.34.5"

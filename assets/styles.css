@@ -1161,6 +1161,12 @@ button:disabled {
   font-size: 13px;
 }
 
+.record-table tr.deleted td {
+  background: #fafafa;
+  color: #9aa3ad;
+  text-decoration: line-through;
+}
+
 .record-empty {
   padding: 18px;
   color: #999;
@@ -1550,6 +1556,62 @@ button:disabled {
   width: 100%;
   height: 40px;
   font-size: 15px;
+}
+
+.quantity-record-list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  margin: 0 0 12px;
+  overflow: auto;
+  color: #475467;
+  font-size: 14px;
+}
+
+.quantity-record-list b {
+  color: #344054;
+  font-size: 14px;
+}
+
+.quantity-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.quantity-record span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quantity-record em {
+  color: #98a2b3;
+  font-style: normal;
+}
+
+.quantity-record .text-btn,
+.quantity-record button {
+  min-width: 58px;
+  min-height: 34px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quantity-record.deleted {
+  color: #98a2b3;
+  text-decoration: line-through;
 }
 
 .sheet-actions {
@@ -2298,6 +2360,10 @@ button:disabled {
   margin: 16px 0 0;
   color: #344054;
   font-weight: 700;
+}
+
+.station-dialog-field .quantity-record-list {
+  margin: 4px 0 0;
 }
 
 .station-quantity-stepper {
